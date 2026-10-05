@@ -226,14 +226,18 @@ def product_list(request):
 
     qs = shop.products.select_related("category")
     q = request.GET.get("q", "").strip()
-    cat = request.GET.get("category", "")
+    cat = request.GET.get("category", "").strip()
     if q:
         # Recherche sur le nom, la référence ET le nom de la catégorie.
         qs = qs.filter(
             Q(name__icontains=q) | Q(sku__icontains=q) | Q(category__name__icontains=q)
         )
-    if cat.isdigit():
-        qs = qs.filter(category_id=cat)
+    if cat:
+        # Le filtre accepte l'identique (signet ancien) ou le nom saisi/suggéré.
+        if cat.isdigit():
+            qs = qs.filter(category_id=cat)
+        else:
+            qs = qs.filter(category__name__iexact=cat)
     if request.GET.get("low"):
         qs = qs.filter(quantity__lte=F("alert_threshold"))
     try:
@@ -244,6 +248,12 @@ def product_list(request):
     page = Paginator(qs, per).get_page(request.GET.get("page"))
     params = request.GET.copy()
     params.pop("page", None)
+    # Valeur affichée dans le champ « catégorie » : un ancien signet avec l'id
+    # est retraduit en nom pour rester cohérent avec les suggestions.
+    cat_label = cat
+    if cat.isdigit():
+        existing = shop.categories.filter(pk=cat).first()
+        cat_label = existing.name if existing else ""
     return render(
         request,
         "product_list.html",
@@ -251,6 +261,7 @@ def product_list(request):
             "page": page,
             "q": q,
             "cat": cat,
+            "cat_label": cat_label,
             "per": per,
 "low": bool(request.GET.get("low")),
             "categories": shop.categories.all(),
@@ -728,16 +739,27 @@ def suggest_products(request):
     )
 
 
-@perm_required("can_manage_categories")
+# Visible par tout utilisateur autorisé à voir les produits : le filtre de la
+# liste doit pouvoir chercher une catégorie même sans le droit d'en gérer.
+@perm_required("can_view_products")
 @require_GET
 def suggest_categories(request):
     q = _suggest_q(request)
-    qs = request.shop.categories.all()
+    qs = request.shop.categories.annotate(n_products=Count("products"))
     if q:
         qs = qs.filter(name__icontains=q)
     rows = qs.order_by("name")[:8]
     return JsonResponse(
-        {"results": [{"label": c.name, "sub": "", "value": c.name} for c in rows]}
+        {
+            "results": [
+                {
+                    "label": c.name,
+                    "sub": f"{c.n_products} produit{'s' if c.n_products != 1 else ''}",
+                    "value": c.name,
+                }
+                for c in rows
+            ]
+        }
     )
 
 

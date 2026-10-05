@@ -120,8 +120,43 @@
 
     searchInput.addEventListener('input', function() {
       clearTimeout(timer);
-      timer = setTimeout(reloadWithServerFilters, 500);
+      timer = setTimeout(function() {
+        // Tant que le menu de suggestions est ouvert, on ne recharge pas :
+        // la navigation détruirait le menu avant qu'il ne soit cliqué.
+        // Le filtrage sera appliqué au choix d'une suggestion, à la touche
+        // Entrée, ou au départ du champ (voir blur ci-dessous).
+        if (document.querySelector('.suggest-box')) return;
+        reloadWithServerFilters();
+      }, 500);
     });
+
+    // Choix d'une suggestion : filtrage immédiat, sans attendre le debounce.
+    searchInput.addEventListener('suggest:chosen', function() {
+      clearTimeout(timer);
+      reloadWithServerFilters();
+    });
+
+    // Entrée : applique la recherche tout de suite (sinon rien ne réagit,
+    // le champ ne fait pas partie d'un formulaire).
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      // Une suggestion est en surbrillance : suggest.js s'en charge.
+      if (document.querySelector('.suggest-item.active')) return;
+      clearTimeout(timer);
+      reloadWithServerFilters();
+    });
+
+    // Départ du champ : la recherche saisie est appliquée si elle diffère
+    // de celle déjà en cours dans l'URL (un clic sur un menu déclenche aussi
+    // ce événement, mais la valeur n'aura pas changé entre-temps).
+    searchInput.addEventListener('blur', function() {
+      setTimeout(function() {
+        const current = new URLSearchParams(window.location.search).get('q') || '';
+        if (searchInput.value.trim() !== current.trim()) reloadWithServerFilters();
+      }, 300);
+    });
+
     typeFilter.addEventListener('change', reloadWithServerFilters);
     productFilter.addEventListener('change', reloadWithServerFilters);
   });

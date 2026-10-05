@@ -41,14 +41,9 @@
                 <iconify-icon icon="solar:magnifier-linear" width="16"></iconify-icon>
                 <span>Rechercher</span>
             </button>
-            <div class="relative w-full sm:w-48">
-                <select name="category" onchange="this.form.submit()" class="pl-3 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors bg-white w-full">
-                    <option value="" {% if not cat %}selected{% endif %}>Toutes catégories</option>
-                    {% for c in categories %}
-                    <option value="{{ c.pk }}" {% if cat|stringformat:"s" == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
-                    {% endfor %}
-                </select>
-                <iconify-icon icon="solar:arrow-down-linear" class="absolute right-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+            <div class="relative w-full sm:w-56">
+                <iconify-icon icon="solar:tag-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="category" value="{{ cat_label }}" placeholder="Toutes catégories" aria-label="Rechercher une catégorie" data-suggest-url="{% url 'suggest_categories' %}" autocomplete="off" class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
             </div>
             <label class="inline-flex items-center gap-2 text-sm">
                 <input type="checkbox" name="low" value="1" {% if low %}checked{% endif %} onchange="this.form.submit()" class="h-4 w-4 text-primary focus:ring-primary border-slate-300 rounded">

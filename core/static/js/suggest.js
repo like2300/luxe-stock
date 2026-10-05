@@ -39,7 +39,12 @@
           closeAll();
           var form = input.closest("form");
           if (form && input.dataset.suggestSubmit !== "0") form.submit();
-          else input.dispatchEvent(new Event("input", { bubbles: true }));
+          else {
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            // Signale aux scripts de page qu'un choix vient d'être fait :
+            // ils peuvent réagir immédiatement (ex. filtrage de la liste).
+            input.dispatchEvent(new Event("suggest:chosen", { bubbles: true }));
+          }
         });
         box.appendChild(b);
       });
