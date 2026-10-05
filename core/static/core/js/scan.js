@@ -85,7 +85,8 @@
 
     /* ---------- Modes ---------- */
     function setMode(next) {
-        // Sans droit de gestion du stock, seuls la fiche produit est possible.
+        // Mode inconnu (?mode=...) ou droit insuffisant : on retombe sur la fiche produit.
+        if ([MODE_IN, MODE_OUT, MODE_CARD].indexOf(next) === -1) { next = MODE_CARD; }
         if (!cfg.canManage && next !== MODE_CARD) { next = MODE_CARD; }
         mode = next;
         var moves = cfg.canManage && next !== MODE_CARD;
