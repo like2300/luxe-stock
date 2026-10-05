@@ -102,7 +102,7 @@ class ShopAdmin(admin.ModelAdmin):
         }),
         ("Apparence", {
             "classes": ("tab",),
-            "fields": ("logo", "primary_color", "sidebar_color", "header_color",
+            "fields": ("logo", "favicon", "primary_color", "sidebar_color", "header_color",
                        "background_color"),
             "description": "Couleurs au format #rrggbb. Elles pilotent le thème du site public.",
         }),
@@ -112,8 +112,9 @@ class ShopAdmin(admin.ModelAdmin):
         }),
         ("Fonctionnalites", {
             "classes": ("tab",),
-            "fields": ("scanner_enabled",),
-            "description": "Scanner de codes-barres : desactive la page, le menu et l'API.",
+            "fields": ("scanner_enabled", "barcode_field_enabled"),
+            "description": "Scanner : desactive la page, le menu et l'API. Champ code-barres : "
+                           "retire des formulaires produit, le menu Scanner restant actif.",
         }),
     )
 

@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Accès Interdit - Luxe</title>
+    <title>Accès Interdit{% if shop %} — {{ shop.document_title }}{% endif %}</title>
+    {% if shop.favicon_url %}
+    <link rel="icon" href="{{ shop.favicon_url }}">
+    {% endif %}
 
     <!-- Fonts: Montserrat (Sans) & Playfair Display (Serif) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

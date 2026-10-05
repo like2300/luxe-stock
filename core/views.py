@@ -109,6 +109,11 @@ def shop_settings(request):
     )
     
     if request.method == "POST" and form.is_valid():
+        # Le template gere la suppression de l'icone a part : un ModelForm ne
+        # voit pas la case « favicon_remove ». On touche l'instance du
+        # formulaire, c'est celle que form.save() enregistrera juste apres.
+        if request.POST.get("favicon_remove") and form.instance.favicon:
+            form.instance.favicon.delete(save=False)
         form.save()
         messages.success(request, "Paramètres enregistrés.")
         return redirect("settings")
@@ -272,17 +277,24 @@ def product_list(request):
 
 @perm_required("can_add_products")
 def product_create(request):
-    # Le scanner renvoie vers ?barcode=CODE : le code lu est pré-rempli.
+    shop = request.shop
+    # Le scanner renvoie vers ?barcode=CODE : le code lu est pré-rempli, ou
+    # directement enregistré quand la boutique a masqué le champ.
     initial = {}
-    barcode = request.GET.get("barcode", "").strip()
-    if barcode:
-        initial["barcode"] = barcode[:64]
-    form = ProductForm(request.POST or None, shop=request.shop, initial=initial)
-    categories = Category.objects.filter(shop=request.shop).order_by("name")
+    scanned = request.GET.get("barcode", "").strip()[:64]
+    if scanned and shop.barcode_field_enabled:
+        initial["barcode"] = scanned
+    form = ProductForm(request.POST or None, shop=shop, initial=initial)
+    categories = Category.objects.filter(shop=shop).order_by("name")
     
     if request.method == "POST" and form.is_valid():
         p = form.save(commit=False)
-        p.shop = request.shop
+        p.shop = shop
+        if scanned and not shop.barcode_field_enabled:
+            # Champ masqué : le code lu est tout de même gardé. Le test d'unicité
+            # évite qu'un code déjà attribué ne fasse echouer la création.
+            if not shop.products.filter(barcode=scanned).exists():
+                p.barcode = scanned
         p.save()
         if p.quantity > 0:
             StockMovement.objects.create(

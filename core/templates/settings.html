@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}Paramètres - Luxe{% endblock %}
+{% block page_title %}Paramètres — {{ shop.document_title }}{% endblock %}
 {% block breadcrumbs %}
     <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
     <iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
@@ -20,14 +20,6 @@
         </button>
     </form>
 </div>
-
-{% if messages %}
-<div class="space-y-2 mb-6">
-    {% for message in messages %}
-    <div class="p-4 rounded-xl text-sm font-medium bg-emerald-50 border border-emerald-100 text-emerald-700">{{ message }}</div>
-    {% endfor %}
-</div>
-{% endif %}
 
 <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
@@ -109,7 +101,43 @@
                 </div>
 
                 <h2 class="font-bold text-dark mt-6 mb-1">Personnalisation</h2>
-                <p class="text-xs text-slate-400 mb-3">Fonctions disponibles dans votre boutique</p>
+                <p class="text-xs text-slate-400 mb-3">Nom affiché dans l’onglet et l’icône du navigateur</p>
+
+                <div class="p-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                    <label class="flex items-center justify-between gap-4 cursor-pointer">
+                        <span class="flex items-center gap-3 min-w-0">
+                            <span class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center shrink-0">
+                                {% if shop.favicon %}
+                                <img src="{{ shop.favicon.url }}" alt="Icône du site" class="w-6 h-6 object-contain">
+                                {% else %}
+                                <iconify-icon icon="solar:widget-5-linear" width="18" class="text-slate-300"></iconify-icon>
+                                {% endif %}
+                            </span>
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-dark">Icône du site (favicon)</span>
+                                <span class="block text-xs text-slate-400">PNG, JPEG ou ICO — 256 Ko max.</span>
+                            </span>
+                        </span>
+                        <span class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-sm cursor-pointer shrink-0">
+                            <iconify-icon icon="solar:upload-linear" width="16"></iconify-icon>
+                            <span id="favicon-label">Choisir</span>
+                        </span>
+                    </label>
+                    <input type="file" name="favicon" id="id_favicon" accept="image/png,image/jpeg,.ico" class="hidden">
+                    {% if shop.favicon %}
+                    <label class="mt-3 flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                        <input type="checkbox" name="favicon_remove" value="1" class="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer">
+                        <span>Retirer l’icône actuelle</span>
+                    </label>
+                    {% endif %}
+                    <p class="mt-3 text-xs text-slate-400">
+                        L’onglet du navigateur affiche « {{ shop.document_title }} ».
+                        Sans icône, les initiales de la société sont utilisées.
+                    </p>
+                </div>
+
+                <h3 class="font-bold text-dark mt-6 mb-1">Fonctionnalités</h3>
+                <p class="text-xs text-slate-400 mb-3">Appliquer à toute la boutique</p>
                 <label class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
                     <span class="min-w-0">
                         <span class="block text-sm font-semibold text-dark">Scanner de codes-barres</span>
@@ -120,6 +148,19 @@
                 </label>
                 <p class="mt-2 text-xs text-slate-400">
                     Désactivé, le scanner disparaît du menu, de la liste des produits et de l'API.
+                </p>
+
+                <label class="flex items-center justify-between gap-4 mt-3 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+                    <span class="min-w-0">
+                        <span class="block text-sm font-semibold text-dark">Champ « Code-barres »</span>
+                        <span class="block text-xs text-slate-400">Formulaires ajout / modification produit</span>
+                    </span>
+                    <input type="checkbox" name="barcode_field_enabled" value="1" {% if shop.barcode_field_enabled %}checked{% endif %}
+                           class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 flex-shrink-0 cursor-pointer">
+                </label>
+                <p class="mt-2 text-xs text-slate-400">
+                    Masqué, le champ disparaît des formulaires produit. Le menu Scanner reste disponible :
+                    les codes lus y sont enregistrés automatiquement.
                 </p>
 
                 {% for field in form %}{% for e in field.errors %}<small class="err">{{ e }}</small>{% endfor %}{% endfor %}
@@ -178,6 +219,19 @@ document.addEventListener('DOMContentLoaded', function() {
         var r = new FileReader();
         r.onload = function(e) {
             document.getElementById('logo-preview').innerHTML = '<img src="' + e.target.result + '" class="w-full h-full object-cover">';
+        };
+        r.readAsDataURL(f);
+    });
+    var fi = document.getElementById('id_favicon');
+    if (fi) fi.addEventListener('change', function() {
+        var f = this.files && this.files[0];
+        var lab = document.getElementById('favicon-label');
+        if (lab) lab.textContent = f ? f.name : 'Choisir';
+        var box = fi.closest('label').querySelector('span.w-10');
+        if (!box || !f) return;
+        var r = new FileReader();
+        r.onload = function(e) {
+            box.innerHTML = '<img src="' + e.target.result + '" alt="Icône du site" class="w-6 h-6 object-contain">';
         };
         r.readAsDataURL(f);
     });

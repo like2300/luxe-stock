@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block page_title %}Luxe Dashboard{% endblock %}</title>
+    <title>{% block page_title %}{{ shop.document_title|default:"Stock" }}{% endblock %}</title>
+    {% if shop.favicon_url %}
+    <link rel="icon" href="{{ shop.favicon_url }}">
+    <link rel="apple-touch-icon" href="{{ shop.favicon_url }}">
+    {% endif %}
 
     <!-- Fonts: Montserrat (Sans) & Playfair Display (Serif) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -106,6 +110,62 @@ tailwind.config = {
         .suggest-item:hover, .suggest-item.active { background: #f5f3ff; }
         .suggest-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .suggest-sub { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+        /* Alertes flottantes façon iOS : cartes empilées en bas à droite.
+           Les classes sont posées par le script, pas par Tailwind, pour que le
+           rendu ne dépende pas du passage du lecteur de classes sur le DOM. */
+        .toast-layer {
+            position: fixed; right: 1rem; bottom: 1rem; z-index: 130;
+            display: flex; flex-direction: column; gap: .5rem;
+            width: min(22rem, calc(100vw - 2rem));
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            pointer-events: none;
+        }
+        .toast {
+            --toast-color: #0ea5e9;
+            position: relative; pointer-events: auto; overflow: hidden;
+            display: flex; align-items: flex-start; gap: .75rem;
+            padding: .75rem .875rem .875rem; border-radius: 1rem;
+            background: rgba(255, 255, 255, .88);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(15, 23, 42, .07);
+            box-shadow: 0 18px 38px -16px rgba(15, 23, 42, .38), 0 4px 10px -4px rgba(15, 23, 42, .16);
+            color: #0f172a; text-align: left;
+            animation: toast-in .42s cubic-bezier(.16, 1, .3, 1) both;
+        }
+        .toast-success { --toast-color: #10b981; }
+        .toast-error { --toast-color: #f43f5e; }
+        .toast-warning { --toast-color: #f59e0b; }
+        .toast.leaving { animation: toast-out .28s cubic-bezier(.4, 0, 1, 1) both; }
+        .toast-icon {
+            flex: none; width: 2rem; height: 2rem; border-radius: 9999px;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--toast-color); color: #fff;
+            box-shadow: 0 4px 10px -3px var(--toast-color);
+        }
+        .toast-body { flex: 1; min-width: 0; }
+        .toast-title { display: block; font-size: .8125rem; font-weight: 700; letter-spacing: .01em; }
+        .toast-text { display: block; margin-top: 1px; font-size: .8125rem; line-height: 1.35; color: #475569; overflow-wrap: anywhere; }
+        .toast-close {
+            flex: none; margin: -.25rem -.25rem 0 0; padding: .25rem;
+            border: 0; background: transparent; color: #94a3b8;
+            border-radius: 9999px; cursor: pointer;
+        }
+        .toast-close:hover { background: rgba(15, 23, 42, .06); color: #475569; }
+        /* Barre de temps restant, comme la banniere iOS. */
+        .toast-bar {
+            position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+            background: var(--toast-color); opacity: .45; transform-origin: left;
+            animation: toast-bar linear forwards;
+        }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
+        @keyframes toast-out { to { opacity: 0; transform: translateX(24px) scale(.96); } }
+        @keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+        @media (prefers-reduced-motion: reduce) {
+            .toast, .toast.leaving, .toast-bar { animation: none; }
+            .toast-bar { display: none; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-600 font-sans antialiased overflow-x-hidden shop-themed">
@@ -183,10 +243,10 @@ tailwind.config = {
                     <iconify-icon icon="solar:settings-linear" width="20" stroke-width="1.5"></iconify-icon>
                     <span>Paramètres</span>
                 </a>
-                <a href="{% url 'logout' %}" class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-rose-500 transition-all duration-200 mt-1">
+                <button type="button" onclick="openLogoutModal()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-rose-500 transition-all duration-200 mt-1 bg-transparent">
                     <iconify-icon icon="solar:logout-2-linear" width="20" stroke-width="1.5"></iconify-icon>
                     <span>Déconnexion</span>
-                </a>
+                </button>
             </div>
         </aside>
 
@@ -297,8 +357,6 @@ tailwind.config = {
                     {% if shop %} · {{ shop.name }}{% endif %}
                 </p>
 
-                <div id="profile-message" class="hidden mt-4 text-sm rounded-lg px-4 py-2"></div>
-
                 <form id="profile-form" class="mt-6 space-y-4" enctype="multipart/form-data">
                     {% csrf_token %}
                     <div>
@@ -346,17 +404,52 @@ tailwind.config = {
                     </div>
                 </div>
 
-                <a href="{% url 'logout' %}" class="mt-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 transition-all">
+                <button type="button" onclick="openLogoutModal()" class="mt-6 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 transition-all bg-transparent">
                     <iconify-icon icon="solar:logout-2-linear" width="18"></iconify-icon>
                     Se déconnecter
-                </a>
+                </button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Popup de confirmation de déconnexion -->
+<div id="logout-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-dark/40 backdrop-blur-sm" data-logout-close></div>
+    <div class="relative min-h-full flex items-center justify-center p-4">
+        <div class="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl px-6 py-8 text-center" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+            <div class="mx-auto w-14 h-14 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center">
+                <iconify-icon icon="solar:logout-2-linear" width="28"></iconify-icon>
+            </div>
+            <h2 id="logout-title" class="text-lg font-bold text-dark font-poppins mt-4">Se déconnecter&nbsp;?</h2>
+            <p class="text-sm text-slate-500 mt-2">Vous allez quitter votre session. Vous devrez vous reconnecter pour retrouver votre espace.</p>
+            <form method="post" action="{% url 'logout' %}" class="mt-6 flex gap-3">
+                {% csrf_token %}
+                <button type="button" data-logout-close data-logout-cancel class="flex-1 px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">Annuler</button>
+                <button type="submit" class="flex-1 px-5 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-medium shadow-lg shadow-rose-600/30 hover:bg-rose-700 transition-all">Se déconnecter</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Alertes flottantes (toasts) : messages Django + notifications de la boutique.
+     Le script reprend cette file d'attente et l'anime ; sans JavaScript le texte
+     reste lisible dans la page. -->
+{% if messages or new_notifications %}
+<div id="toast-queue" hidden>
+    {% for message in messages %}
+    <span data-toast="{{ message }}" data-toast-tone="{% if 'error' in message.tags %}error{% elif 'warning' in message.tags %}warning{% elif 'success' in message.tags %}success{% else %}info{% endif %}"></span>
+    {% endfor %}
+    {% for n in new_notifications %}
+    <span data-toast="{{ n.message }}" data-toast-title="{{ n.label }}" data-toast-tone="{% if n.level == 'rupture' %}error{% elif n.level == 'bas' %}warning{% else %}info{% endif %}"></span>
+    {% endfor %}
+</div>
+{% endif %}
+<div id="toast-layer" class="toast-layer" role="region" aria-label="Alertes" aria-live="polite"></div>
+
 <!-- Scripts -->
     {% load static %}
+    <script src="{% static 'js/toasts.js' %}"></script>
     <script src="{% static 'js/suggest.js' %}"></script>
     {% block scripts %}{% endblock %}
     <script>
@@ -381,6 +474,30 @@ tailwind.config = {
                     overlay.classList.add('hidden');
                 }, 300);
             }
+        }
+
+        // --- Confirmation de déconnexion ---
+        const logoutModal = document.getElementById('logout-modal');
+        function openLogoutModal() {
+            if (!logoutModal) return;
+            // Referme le popup de profil s'il est ouvert (il contient un bouton de déconnexion)
+            const profileModal = document.getElementById('profile-modal');
+            if (profileModal) profileModal.classList.add('hidden');
+            logoutModal.classList.remove('hidden');
+            const cancel = logoutModal.querySelector('[data-logout-cancel]');
+            if (cancel) cancel.focus();
+        }
+        function closeLogoutModal() {
+            if (logoutModal) logoutModal.classList.add('hidden');
+        }
+        if (logoutModal) {
+            // Fond du popup et bouton « Annuler »
+            logoutModal.querySelectorAll('[data-logout-close]').forEach(function (el) {
+                el.addEventListener('click', closeLogoutModal);
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !logoutModal.classList.contains('hidden')) closeLogoutModal();
+            });
         }
 
         // --- Son ON/OFF par PC (localStorage : chaque PC garde son réglage) ---
@@ -436,7 +553,6 @@ tailwind.config = {
 
             const form = document.getElementById('profile-form');
             const avatarBox = document.getElementById('profile-avatar');
-            const messageBox = document.getElementById('profile-message');
             const photoInput = document.getElementById('profile-photo');
             const photoDelete = document.getElementById('profile-photo-delete');
             const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
@@ -472,14 +588,9 @@ tailwind.config = {
             }
 
             function showMessage(text, tone) {
-                if (!messageBox) return;
-                if (!text) { messageBox.classList.add('hidden'); return; }
-                const tones = {
-                    ok: 'bg-emerald-50 text-emerald-700',
-                    ko: 'bg-rose-50 text-rose-700',
-                };
-                messageBox.className = 'mt-4 text-sm rounded-lg px-4 py-2 ' + (tones[tone] || tones.ok);
-                messageBox.textContent = text;
+                // Les retours du popup profil sont des alertes ponctuelles : ils
+                // rejoignent la couche de toasts, comme tous les autres messages.
+                if (text) { window.toast(text, tone === 'ko' ? 'error' : 'success'); }
             }
 
             function fill(data) {
@@ -516,7 +627,6 @@ tailwind.config = {
 
             function open() {
                 modal.classList.remove('hidden');
-                showMessage('', 'ok');
                 fetch(trigger.dataset.url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then(function(r) { return r.json(); })
                     .then(fill)

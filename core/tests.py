@@ -14,7 +14,17 @@ from django.utils.http import urlencode
 from allauth.socialaccount.models import SocialAccount
 from PIL import Image
 
-from .models import PERMISSIONS, Membership, Notification, Product, Profile, Shop, StockMovement
+from .models import (
+    PERMISSIONS,
+    Category,
+    Membership,
+    Notification,
+    Product,
+    Profile,
+    Shop,
+    StockMovement,
+    push_notification,
+)
 
 
 def image_upload(name="moi.png", fmt="PNG", color="red"):
@@ -466,6 +476,245 @@ class ScanTests(TestCase):
         self.shop.refresh_from_db()
         self.assertTrue(self.shop.scanner_enabled)
         self.assertEqual(self.client.get(reverse("scan")).status_code, 200)
+
+    # ---------- Masquage du champ code-barres ----------
+    def hide_barcode_field(self):
+        self.shop.barcode_field_enabled = False
+        self.shop.save(update_fields=["barcode_field_enabled"])
+
+    def test_settings_toggle_hides_the_barcode_field_only(self):
+        edit = reverse("product_edit", args=[self.product.pk])
+        self.assertContains(self.client.get(reverse("product_create")), 'id="id_barcode"')
+        self.assertContains(self.client.get(edit), 'id="id_barcode"')
+
+        self.hide_barcode_field()
+        # Le champ disparait des deux formulaires produit...
+        self.assertNotContains(self.client.get(reverse("product_create")), 'id="id_barcode"')
+        self.assertNotContains(self.client.get(edit), 'id="id_barcode"')
+        # ...mais le menu Scanner reste disponible, avec sa page et son API.
+        self.assertContains(self.client.get(reverse("product_list")), ">Scanner<")
+        self.assertEqual(self.client.get(reverse("scan")).status_code, 200)
+
+        # Le code deja enregistre n'est pas efface par une edition sans le champ.
+        r = self.client.post(edit, {
+            "name": "Jus", "sku": "PRD-0001", "category": "", "cost_price": "100",
+            "sale_price": "150", "quantity": "10", "alert_threshold": "5", "description": "",
+        })
+        self.assertEqual(r.status_code, 302)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.barcode, "6194000000015")
+
+    def test_scanned_code_is_kept_when_the_field_is_hidden(self):
+        self.hide_barcode_field()
+        url = reverse("product_create") + "?barcode=3012345678901"
+        self.assertNotContains(self.client.get(url), 'id="id_barcode"')
+        r = self.client.post(url, {
+            "name": "Eau", "sku": "", "category": "", "cost_price": "100",
+            "sale_price": "150", "quantity": "3", "alert_threshold": "5",
+        })
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Product.objects.get(name="Eau").barcode, "3012345678901")
+
+        # Un code deja attribue a un autre produit n'est pas copie tel quel.
+        r = self.client.post(url.replace("3012345678901", "6194000000015"), {
+            "name": "Eau 2", "sku": "", "category": "", "cost_price": "100",
+            "sale_price": "150", "quantity": "3", "alert_threshold": "5",
+        })
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Product.objects.get(name="Eau 2").barcode, "")
+
+    def test_settings_form_saves_the_barcode_field_toggle(self):
+        payload = {
+            "name": "Ma Boutique", "currency": "FCFA", "address": "", "phone": "",
+            "primary_color": "#5bc0de", "sidebar_color": "#3d4b5c",
+            "header_color": "#4a5868", "background_color": "#e9edf4",
+            "scanner_enabled": "1",
+        }
+        # Case decochee : le champ disparait, le scanner reste allume.
+        self.assertEqual(self.client.post(reverse("settings"), payload).status_code, 302)
+        self.shop.refresh_from_db()
+        self.assertFalse(self.shop.barcode_field_enabled)
+        self.assertTrue(self.shop.scanner_enabled)
+
+        self.client.post(reverse("settings"), {**payload, "barcode_field_enabled": "1"})
+        self.shop.refresh_from_db()
+        self.assertTrue(self.shop.barcode_field_enabled)
+        self.assertContains(self.client.get(reverse("product_create")), 'id="id_barcode"')
+
+
+class ToastTests(TestCase):
+    """Alertes flottantes : messages Django et notifications de la boutique."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def setUp(self):
+        self.user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.shop = Shop.objects.create(owner=self.user, name="Ma Boutique", currency="FCFA")
+        Membership.objects.create(user=self.user, shop=self.shop, is_owner=True)
+        self.client.login(username="boss", password=self.PASSWORD)
+        self.category = Category.objects.create(shop=self.shop, name="Boissons")
+
+    def stock_out(self, name, sku):
+        """Produit en rupture, puis alerte de rupture : le couple le plus courant."""
+        product = Product.objects.create(shop=self.shop, name=name, sku=sku, quantity=0)
+        return push_notification(product, Notification.OUT_OF_STOCK, user=self.user)
+
+    def test_every_page_carries_the_toast_layer(self):
+        for name in ("dashboard", "product_list", "category_list", "movement_list",
+                     "notification_list", "employee_list", "settings"):
+            self.assertContains(self.client.get(reverse(name)), 'id="toast-layer"')
+
+    def test_success_message_is_queued_as_a_toast(self):
+        self.client.post(reverse("category_delete", args=[self.category.pk]))
+        body = self.client.get(reverse("category_list")).content.decode()
+        self.assertIn('data-toast="Catégorie supprimée."', body)
+        self.assertIn('data-toast-tone="success"', body)
+
+    def test_error_message_is_queued_as_an_error_toast(self):
+        self.client.post(reverse("category_list"), {"name": "Boissons"})
+        body = self.client.get(reverse("category_list")).content.decode()
+        self.assertIn('data-toast="Cette catégorie existe déjà."', body)
+        self.assertIn('data-toast-tone="error"', body)
+
+    def test_messages_are_consumed_once(self):
+        self.client.post(reverse("category_delete", args=[self.category.pk]))
+        self.assertIn("Catégorie supprimée.", self.client.get(reverse("dashboard")).content.decode())
+        self.assertNotIn("Catégorie supprimée.", self.client.get(reverse("dashboard")).content.decode())
+
+    def test_new_notification_is_shown_once(self):
+        self.stock_out("Jus", "PRD-0001")
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn('data-toast-title="Rupture de stock"', body)
+        self.assertIn('data-toast-tone="error"', body)
+        # Le creneau de session avance : l'alerte ne reapparait pas au chargement suivant.
+        self.assertNotIn(
+            'data-toast-title="Rupture de stock"',
+            self.client.get(reverse("dashboard")).content.decode(),
+        )
+
+    def test_notification_queue_is_served_in_batches(self):
+        for i in range(4):
+            self.stock_out(f"Produit {i}", f"PRD-{i}")
+        # Trois alertes par affichage, la derniere attend la page suivante.
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertEqual(body.count('data-toast-title="Rupture de stock"'), 3)
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertEqual(body.count('data-toast-title="Rupture de stock"'), 1)
+        self.assertNotIn(
+            'data-toast-title="Rupture de stock"',
+            self.client.get(reverse("dashboard")).content.decode(),
+        )
+
+    def test_stock_is_not_alerted_before_any_visit(self):
+        # Sans creneau de session, l'historique n'est pas rattrape en rafale.
+        for i in range(4):
+            self.stock_out(f"Produit {i}", f"PRD-{i}")
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertNotIn('data-toast-title="Rupture de stock"', body)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="tests-media-"))
+class BrandingTests(TestCase):
+    """Titre de l'onglet et favicon : propres a chaque boutique."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.shop = Shop.objects.create(owner=self.user, name="Ma Boutique", currency="FCFA")
+        Membership.objects.create(user=self.user, shop=self.shop, is_owner=True)
+        self.client.login(username="boss", password=self.PASSWORD)
+
+    def settings_post(self, **extra):
+        payload = {
+            "name": self.shop.name, "currency": self.shop.currency, "address": "",
+            "phone": "", "primary_color": "#5bc0de", "sidebar_color": "#3d4b5c",
+            "header_color": "#4a5868", "background_color": "#e9edf4", **extra,
+        }
+        return self.client.post(reverse("settings"), payload)
+
+    def big_image_upload(self):
+        """Image bruitee : elle pese plus de 256 Ko une fois encodee en PNG."""
+        import io
+
+        buf = io.BytesIO()
+        Image.new("RGB", (700, 700)).tobytes()  # lecture inutile, garde le type
+        noise = Image.effect_noise((700, 700), 120).convert("RGB")
+        noise.save(buf, format="PNG")
+        buf.seek(0)
+        return SimpleUploadedFile("gros.png", buf.read(), content_type="image/png")
+
+    def test_page_title_uses_the_shop_name(self):
+        self.assertContains(self.client.get(reverse("dashboard")), "<title>Tableau de Bord — Ma Boutique</title>", html=False)
+        self.assertContains(self.client.get(reverse("product_list")), "<title>Produits — Ma Boutique</title>", html=False)
+        self.assertContains(self.client.get(reverse("settings")), "<title>Paramètres — Ma Boutique</title>", html=False)
+
+    def test_title_follows_the_renamed_shop(self):
+        self.shop.name = "Pharmacie du Marché"
+        self.shop.save()
+        self.assertContains(
+            self.client.get(reverse("product_list")),
+            "<title>Produits — Pharmacie du Marché</title>", html=False)
+
+    def test_favicon_falls_back_to_the_initials(self):
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn('<link rel="icon" href="data:image/svg+xml,', body)
+        self.assertIn("MB", body)  # initiales de « Ma Boutique »
+        self.assertNotIn("favicon.ico", body)
+
+    def test_upload_and_remove_the_favicon(self):
+        self.settings_post(favicon=image_upload("icone.png"))
+        self.shop.refresh_from_db()
+        self.assertTrue(self.shop.favicon)
+        self.assertTrue(self.shop.favicon.name.startswith("favicons/"))
+        self.assertContains(
+            self.client.get(reverse("dashboard")),
+            '<link rel="icon" href="/media/%s">' % self.shop.favicon.name)
+
+        # Envoyer le formulaire sans case ne doit pas effacer l'icone.
+        self.settings_post()
+        self.shop.refresh_from_db()
+        self.assertTrue(self.shop.favicon)
+
+        self.settings_post(favicon_remove="1")
+        self.shop.refresh_from_db()
+        self.assertFalse(self.shop.favicon)
+        self.assertContains(self.client.get(reverse("dashboard")), "data:image/svg+xml,")
+
+    def test_favicon_is_refused_when_too_heavy(self):
+        r = self.settings_post(favicon=self.big_image_upload())
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "256 Ko maximum")
+        self.shop.refresh_from_db()
+        self.assertFalse(self.shop.favicon)
+
+    def test_favicon_is_refused_when_not_an_image(self):
+        r = self.settings_post(
+            favicon=SimpleUploadedFile("icone.png", b"ceci n'est pas une image", content_type="image/png"))
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("favicon", r.context["form"].errors)
+        self.shop.refresh_from_db()
+        self.assertFalse(self.shop.favicon)
+
+    def test_another_shop_keeps_its_own_title_and_favicon(self):
+        other = User.objects.create_user("autre", password=self.PASSWORD)
+        other_shop = Shop.objects.create(owner=other, name="Déco Center", currency="EUR")
+        Membership.objects.create(user=other, shop=other_shop, is_owner=True)
+
+        self.settings_post(favicon=image_upload("icone.png"))
+        self.shop.refresh_from_db()
+        self.client.logout()
+        self.client.login(username="autre", password=self.PASSWORD)
+
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn("<title>Tableau de Bord — Déco Center</title>", body)
+        self.assertIn("DC", body)  # ses initiales, pas celles de l'autre boutique
+        self.assertNotIn(self.shop.favicon.name, body)
 
 
 class FlowTests(TestCase):

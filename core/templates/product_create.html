@@ -3,10 +3,12 @@
 
 {% block scripts %}
 <script src="{% static 'core/js/product_autocomplete.js' %}" defer></script>
+{% if shop.barcode_field_enabled and shop.scanner_enabled %}
 <script src="{% static 'core/js/barcode_scanner.js' %}" defer></script>
+{% endif %}
 {% endblock %}
 
-{% block page_title %}Ajouter un Produit - Luxe{% endblock %}
+{% block page_title %}Ajouter un Produit — {{ shop.document_title }}{% endblock %}
 
 {% block breadcrumbs %}
     <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>

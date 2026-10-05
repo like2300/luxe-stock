@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from django.core.validators import RegexValidator
 from django.db import models, transaction
 from django.db.models import Q
+from urllib.parse import quote
 
 hex_color = RegexValidator(r"^#[0-9a-fA-F]{6}$", "Couleur invalide (format #rrggbb).")
 
@@ -40,6 +41,7 @@ class Shop(models.Model):
     phone = models.CharField("Téléphone", max_length=40, blank=True)
     currency = models.CharField("Devise", max_length=10, default="FCFA")
     logo = models.ImageField("Logo", upload_to="logos/", blank=True, null=True)
+    favicon = models.ImageField("Icône du site (favicon)", upload_to="favicons/", blank=True, null=True)
     primary_color = models.CharField("Couleur principale", max_length=7, default="#5bc0de", validators=[hex_color])
     sidebar_color = models.CharField("Couleur du menu latéral", max_length=7, default="#3d4b5c", validators=[hex_color])
     header_color = models.CharField("Couleur des en-têtes de tableau", max_length=7, default="#4a5868", validators=[hex_color])
@@ -47,13 +49,50 @@ class Shop(models.Model):
     # Le scanner est facultatif : une boutique peut le masquer completement
     # (menu, page et API) depuis ses parametres.
     scanner_enabled = models.BooleanField("Scanner de codes-barres", default=True)
+    # Reglee separement de scanner_enabled : une boutique peut garder le menu
+    # Scanner (saisie clavier / camera) tout en retirant le champ des
+    # formulaires produit, les codes lus etant alors enregistres sans saisie.
+    barcode_field_enabled = models.BooleanField("Champ « Code-barres »", default=True)
 
     def __str__(self):
         return self.name
 
     @property
     def initials(self):
-        return self.name[:3].upper()
+        """Initiales pour le logo et le favicon : une lettre par mot.
+
+        « Ma Boutique » donne « MB », et non les trois premiers caracteres
+        (« MA »), qui sont coupees au hasard par la coupure des mots.
+        """
+        letters = "".join(word[0] for word in self.name.split() if word)[:3]
+        return (letters or self.name[:3]).upper()
+
+    @property
+    def document_title(self):
+        """Titre de l'onglet du navigateur : le nom de la société.
+
+        Passe par la propriete plutot que par le nom du modele pour que les
+        gabarits aient un point d'entree unique si la regle change.
+        """
+        return self.name or "Stock"
+
+    @property
+    def favicon_url(self):
+        """URL du favicon : l'image envoyee, sinon les initiales en SVG.
+
+        Evite une requete vers /favicon.ico qui repondrait 404 pour une
+        boutique sans icône personnalisee.
+        """
+        if self.favicon:
+            return self.favicon.url
+        svg = (
+            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"
+            f"<rect width='64' height='64' rx='14' fill='{self.primary_color}'/>"
+            "<text x='32' y='43' text-anchor='middle' font-family='Montserrat,Arial,sans-serif'"
+            f" font-size='28' font-weight='bold' fill='#ffffff'>{self.initials}</text>"
+            "</svg>"
+        )
+        return "data:image/svg+xml," + quote(svg, safe="")
 
 
 class Membership(models.Model):

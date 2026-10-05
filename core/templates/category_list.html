@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block page_title %}Catégories - Luxe{% endblock %}
+{% block page_title %}Catégories — {{ shop.document_title }}{% endblock %}
 
 {% block breadcrumbs %}
 <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
@@ -21,14 +21,6 @@
     </button>
     {% endif %}
 </div>
-
-{% if messages %}
-<div class="space-y-2 mb-6">
-    {% for message in messages %}
-    <div class="p-4 rounded-xl text-sm font-medium {% if message.tags == 'success' %}bg-emerald-50 border border-emerald-100 text-emerald-700{% else %}bg-rose-50 border border-rose-100 text-rose-700{% endif %}">{{ message }}</div>
-    {% endfor %}
-</div>
-{% endif %}
 
 <!-- Popup Nouvelle Catégorie -->
 {% if sp.can_manage_categories %}

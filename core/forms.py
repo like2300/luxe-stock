@@ -50,6 +50,32 @@ class ColorInput(forms.TextInput):
     input_type = "color"
 
 
+def clean_image_upload(upload, max_bytes, max_label, allowed_types, formats_label, field_label):
+    """Valide une image envoyee dans un formulaire.
+
+    Le meme controle est applique a la photo de profil et au favicon :
+    taille maxi, type MIME, puis ouverture par Pillow (un fichier renomme
+    ``.png`` sans etre une image est refuse).
+    """
+    if not isinstance(upload, UploadedFile):
+        # Champ vide : renvoie le fichier deja enregistree (FieldFile). Il a deja
+        # ete valide, et surtout l'ouvrir laisserait un verrou sur le fichier.
+        return upload
+    if upload.size > max_bytes:
+        raise forms.ValidationError(f"{field_label} trop lourde ({max_label} maximum).")
+    content_type = getattr(upload, "content_type", "") or ""
+    if content_type and content_type not in allowed_types:
+        raise forms.ValidationError(f"Format non supporté ({formats_label}).")
+    try:
+        with Image.open(upload) as image:
+            image.verify()
+    except Exception:
+        raise forms.ValidationError("Fichier image invalide.")
+    # verify() laisse le curseur en fin de fichier : on le reboucle pour l'enregistrement.
+    upload.seek(0)
+    return upload
+
+
 class SignupForm(UserCreationForm):
     first_name = forms.CharField(label="Nom complet", max_length=60, required=False)
     email = forms.EmailField(label="Email", required=False)
@@ -89,23 +115,42 @@ class ShopCreateForm(StyledFormMixin, forms.ModelForm):
 
 
 class ShopSettingsForm(StyledFormMixin, forms.ModelForm):
+    # Un favicon est charge a chaque onglet du navigateur : on refuse les
+    # gros fichiers, l/upload inutile de plusieurs Mo serait lent pour tous.
+    MAX_FAVICON_BYTES = 256 * 1024  # 256 Ko
+    ALLOWED_FAVICON_TYPES = {"image/png", "image/jpeg", "image/x-icon", "image/vnd.microsoft.icon"}
+
     class Meta:
         model = Shop
-        fields = ["name", "address", "phone", "currency", "logo", "scanner_enabled",
-                  "primary_color", "sidebar_color", "header_color", "background_color"]
+        fields = ["name", "address", "phone", "currency", "logo", "favicon", "scanner_enabled",
+                  "barcode_field_enabled", "primary_color", "sidebar_color",
+                  "header_color", "background_color"]
         widgets = {f: ColorInput() for f in ["primary_color", "sidebar_color", "header_color", "background_color"]}
+
+    # Interrupteurs dessines a la main dans la page des parametres : une case
+    # non cochee ne doit pas etre lue comme « desactiver la fonctionnalite ».
+    TOGGLES = ("scanner_enabled", "barcode_field_enabled")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # La page des parametres n'affiche pas ce champ : une case non cochee
-        # ne doit pas etre lue comme « desactiver le scanner ».
-        self.fields["scanner_enabled"].required = False
-        if not self.is_bound:
-            self.fields["scanner_enabled"].initial = Shop._meta.get_field("scanner_enabled").default
+        for name in self.TOGGLES:
+            self.fields[name].required = False
+            if not self.is_bound:
+                self.fields[name].initial = Shop._meta.get_field(name).default
+
+    def clean_favicon(self):
+        return clean_image_upload(
+            self.cleaned_data.get("favicon"),
+            max_bytes=self.MAX_FAVICON_BYTES,
+            max_label="256 Ko",
+            allowed_types=self.ALLOWED_FAVICON_TYPES,
+            formats_label="PNG, JPEG ou ICO",
+            field_label="Icône du site",
+        )
 
     @property
     def info_fields(self):
-        return [self[n] for n in ["name", "address", "phone", "currency", "logo"]]
+        return [self[n] for n in ["name", "address", "phone", "currency", "logo", "favicon"]]
 
     @property
     def color_fields(self):
@@ -124,25 +169,14 @@ class ProfileForm(StyledFormMixin, forms.ModelForm):
         widgets = {"bio": forms.TextInput(attrs={"maxlength": 200})}
 
     def clean_photo(self):
-        photo = self.cleaned_data.get("photo")
-        # Un champ vide renvoie la photo deja enregistree (FieldFile) : elle a deja
-        # ete validee, et surtout l'ouvrir laisserait un verrou sur le fichier.
-        if not isinstance(photo, UploadedFile):
-            return photo
-        if photo.size > self.MAX_PHOTO_BYTES:
-            raise forms.ValidationError("Photo trop lourde (2 Mo maximum).")
-        content_type = getattr(photo, "content_type", "") or ""
-        if content_type and content_type not in self.ALLOWED_TYPES:
-            raise forms.ValidationError("Format non supporté (JPEG, PNG, WebP ou GIF).")
-        try:
-            # Verifie que le fichier est bien une image (evite un renommage frauduleux).
-            with Image.open(photo) as image:
-                image.verify()
-        except Exception:
-            raise forms.ValidationError("Fichier image invalide.")
-        # verify() laisse le curseur en fin de fichier : on le reboucle pour l'enregistrement.
-        photo.seek(0)
-        return photo
+        return clean_image_upload(
+            self.cleaned_data.get("photo"),
+            max_bytes=self.MAX_PHOTO_BYTES,
+            max_label="2 Mo",
+            allowed_types=self.ALLOWED_TYPES,
+            formats_label="JPEG, PNG, WebP ou GIF",
+            field_label="Photo",
+        )
 
     @property
     def info_fields(self):
@@ -165,7 +199,14 @@ class ProductForm(StyledFormMixin, forms.ModelForm):
         self.fields["category"].queryset = shop.categories.all().order_by("name")
         _autocomplete(self.fields["category"], CategoryAutocompleteWidget)
         self.fields["sku"].help_text = "Laisser vide pour générer automatiquement."
-        self.fields["barcode"].help_text = "Facultatif — scannable ensuite depuis le menu Scanner."
+        if shop.barcode_field_enabled:
+            self.fields["barcode"].help_text = "Facultatif — scannable ensuite depuis le menu Scanner."
+        else:
+            # Champ retire des deux formulaires produit : le code n'est alors
+            # saisi que par le menu Scanner, qui le renvoie dans l'URL. Le champ
+            # disparait aussi de la validation, et le code deja enregistre est
+            # conserve tel quel a l'edition.
+            del self.fields["barcode"]
         if self.instance.pk:
             self.fields["quantity"].label = "Quantité en stock"
             self.fields["quantity"].help_text = (
