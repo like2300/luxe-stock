@@ -15,7 +15,7 @@
         <p class="text-slate-500">Gérez vos produits et leur stock.</p>
     </div>
     <div class="flex items-center gap-3">
-        {% if sp.can_view_products %}
+        {% if shop.scanner_enabled and sp.can_view_products %}
         <a href="{% url 'scan' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-primary/30 hover:text-primary transition-all">
             <iconify-icon icon="solar:barcode-linear" width="18"></iconify-icon>
             <span>Scanner</span>
@@ -192,15 +192,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  const checkAll = document.getElementById('check-all');
-  if (checkAll) {
-    checkAll.addEventListener('change', function() {
-      document.querySelectorAll('.row-check').forEach(cb => {
-        cb.checked = checkAll.checked;
-      });
-    });
-  }
-});
-</script>

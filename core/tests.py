@@ -422,6 +422,51 @@ class ScanTests(TestCase):
         self.assertNotIn("Créer ce produit", body)
         self.assertNotIn(reverse("scan_movement_api"), body)
 
+    # ---------- Activation / desactivation depuis les parametres ----------
+    def disable_scanner(self):
+        self.shop.scanner_enabled = False
+        self.shop.save(update_fields=["scanner_enabled"])
+
+    def test_settings_toggle_hides_the_scanner_everywhere(self):
+        self.assertContains(self.client.get(reverse("product_list")), ">Scanner<")
+        self.assertContains(self.client.get(reverse("dashboard")), reverse("scan"))
+
+        self.disable_scanner()
+        self.assertNotContains(self.client.get(reverse("product_list")), ">Scanner<")
+        self.assertNotContains(self.client.get(reverse("dashboard")), reverse("scan"))
+        self.assertNotContains(self.client.get(reverse("product_create")), 'id="barcode-scan-btn"')
+
+    def test_disabled_scanner_refuses_page_and_api(self):
+        self.disable_scanner()
+        self.assertEqual(self.client.get(reverse("scan")).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse("scan_api"), {"code": "6194000000015"}).status_code, 403)
+        r = self.post_lines([{"product_id": self.product.pk, "quantity": 1}])
+        self.assertEqual(r.status_code, 403)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 10)
+
+    def test_settings_form_saves_the_toggle(self):
+        r = self.client.post(reverse("settings"), {
+            "name": "Ma Boutique", "currency": "FCFA", "address": "", "phone": "",
+            "primary_color": "#5bc0de", "sidebar_color": "#3d4b5c",
+            "header_color": "#4a5868", "background_color": "#e9edf4",
+        })
+        self.assertEqual(r.status_code, 302)
+        self.shop.refresh_from_db()
+        self.assertFalse(self.shop.scanner_enabled)
+
+        # Case cochee : le scanner redevient disponible.
+        self.client.post(reverse("settings"), {
+            "name": "Ma Boutique", "currency": "FCFA", "address": "", "phone": "",
+            "primary_color": "#5bc0de", "sidebar_color": "#3d4b5c",
+            "header_color": "#4a5868", "background_color": "#e9edf4",
+            "scanner_enabled": "1",
+        })
+        self.shop.refresh_from_db()
+        self.assertTrue(self.shop.scanner_enabled)
+        self.assertEqual(self.client.get(reverse("scan")).status_code, 200)
+
 
 class FlowTests(TestCase):
     def test_full_flow(self):

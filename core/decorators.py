@@ -38,3 +38,17 @@ def owner_required(view):
             raise PermissionDenied
         return view(request, *args, **kwargs)
     return wrapper
+
+
+def scanner_required(view):
+    """Refuse l'acces quand le scanner est desactive pour la boutique.
+
+    A poser sous un decorateur qui appelle shop_required : request.shop doit
+    deja etre defini au moment du controle.
+    """
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if not request.shop.scanner_enabled:
+            raise PermissionDenied
+        return view(request, *args, **kwargs)
+    return wrapper

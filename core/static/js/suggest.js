@@ -48,9 +48,12 @@
       wrap.appendChild(box);
     }
 
-    function fetch() {
+    function loadSuggestions() {
       var q = input.value.trim();
-      fetch(url + "?q=" + encodeURIComponent(q), { headers: { "X-Requested-With": "XMLHttpRequest" } })
+      // window.fetch explicite : une fonction locale nommée « fetch » masquerait
+      // l'API et provoquerait une récursion infinie.
+      window
+        .fetch(url + "?q=" + encodeURIComponent(q), { headers: { "X-Requested-With": "XMLHttpRequest" } })
         .then(function (r) { return r.json(); })
         .then(function (d) { render(d.results || []); })
         .catch(function () {});
@@ -58,9 +61,9 @@
 
     input.addEventListener("input", function () {
       clearTimeout(timer);
-      timer = setTimeout(fetch, 200);
+      timer = setTimeout(loadSuggestions, 200);
     });
-    input.addEventListener("focus", fetch);
+    input.addEventListener("focus", loadSuggestions);
     input.addEventListener("blur", function () { setTimeout(closeAll, 150); });
     input.addEventListener("keydown", function (e) {
       if (!box) return;

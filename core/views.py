@@ -15,7 +15,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_POST
 
 from .avatar import avatar_data, ensure_profile, get_profile
-from .decorators import owner_required, perm_required, shop_required
+from .decorators import owner_required, perm_required, scanner_required, shop_required
 from .forms import (
     CategoryForm,
     EmployeeForm,
@@ -228,7 +228,10 @@ def product_list(request):
     q = request.GET.get("q", "").strip()
     cat = request.GET.get("category", "")
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+        # Recherche sur le nom, la référence ET le nom de la catégorie.
+        qs = qs.filter(
+            Q(name__icontains=q) | Q(sku__icontains=q) | Q(category__name__icontains=q)
+        )
     if cat.isdigit():
         qs = qs.filter(category_id=cat)
     if request.GET.get("low"):
@@ -571,6 +574,7 @@ def _scan_payload(product):
 
 @perm_required("can_view_products")
 @require_GET
+@scanner_required
 def scan_api(request):
     """GET /api/scan/?code=XXX : retrouve un produit par code-barres, puis par référence.
 
@@ -596,6 +600,7 @@ def scan_api(request):
 
 @perm_required("can_manage_stock")
 @require_POST
+@scanner_required
 def scan_movement_api(request):
     """POST /api/scan/mouvement/ : enregistre un lot d'entrées / sorties scanné.
 
@@ -676,6 +681,7 @@ def scan_movement_api(request):
 
 
 @perm_required("can_view_products")
+@scanner_required
 def scan(request):
     """Page de scan : sortie, entrée ou simple fiche produit."""
     return render(
@@ -700,10 +706,25 @@ def suggest_products(request):
     q = _suggest_q(request)
     qs = request.shop.products.select_related("category")
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+        # Nom, référence ou catégorie : la suggestion suit le même périmètre
+        # que la recherche de la liste des produits.
+        qs = qs.filter(
+            Q(name__icontains=q)
+            | Q(sku__icontains=q)
+            | Q(category__name__icontains=q)
+        )
     rows = qs.order_by("name")[:8]
     return JsonResponse(
-        {"results": [{"label": p.name, "sub": p.sku, "value": p.name} for p in rows]}
+        {
+            "results": [
+                {
+                    "label": p.name,
+                    "sub": " — ".join(x for x in [p.sku, p.category.name if p.category else ""] if x),
+                    "value": p.name,
+                }
+                for p in rows
+            ]
+        }
     )
 
 

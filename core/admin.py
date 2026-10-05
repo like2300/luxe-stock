@@ -110,6 +110,11 @@ class ShopAdmin(admin.ModelAdmin):
             "classes": ("tab",),
             "fields": ("shop_summary",),
         }),
+        ("Fonctionnalites", {
+            "classes": ("tab",),
+            "fields": ("scanner_enabled",),
+            "description": "Scanner de codes-barres : desactive la page, le menu et l'API.",
+        }),
     )
 
     @display(description="Produits", ordering="products_count")

@@ -151,7 +151,7 @@ tailwind.config = {
                     <span>Mouvements</span>
                 </a>
 
-                {% if sp.can_view_products %}
+                {% if shop.scanner_enabled and sp.can_view_products %}
                 <a href="{% url 'scan' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'scan' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200">
                     <iconify-icon icon="solar:barcode-linear" width="20" stroke-width="1.5"></iconify-icon>
                     <span>Scanner</span>

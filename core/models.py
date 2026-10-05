@@ -44,6 +44,9 @@ class Shop(models.Model):
     sidebar_color = models.CharField("Couleur du menu latéral", max_length=7, default="#3d4b5c", validators=[hex_color])
     header_color = models.CharField("Couleur des en-têtes de tableau", max_length=7, default="#4a5868", validators=[hex_color])
     background_color = models.CharField("Couleur de fond", max_length=7, default="#e9edf4", validators=[hex_color])
+    # Le scanner est facultatif : une boutique peut le masquer completement
+    # (menu, page et API) depuis ses parametres.
+    scanner_enabled = models.BooleanField("Scanner de codes-barres", default=True)
 
     def __str__(self):
         return self.name

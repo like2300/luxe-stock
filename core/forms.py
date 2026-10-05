@@ -91,9 +91,17 @@ class ShopCreateForm(StyledFormMixin, forms.ModelForm):
 class ShopSettingsForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = Shop
-        fields = ["name", "address", "phone", "currency", "logo",
+        fields = ["name", "address", "phone", "currency", "logo", "scanner_enabled",
                   "primary_color", "sidebar_color", "header_color", "background_color"]
         widgets = {f: ColorInput() for f in ["primary_color", "sidebar_color", "header_color", "background_color"]}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # La page des parametres n'affiche pas ce champ : une case non cochee
+        # ne doit pas etre lue comme « desactiver le scanner ».
+        self.fields["scanner_enabled"].required = False
+        if not self.is_bound:
+            self.fields["scanner_enabled"].initial = Shop._meta.get_field("scanner_enabled").default
 
     @property
     def info_fields(self):

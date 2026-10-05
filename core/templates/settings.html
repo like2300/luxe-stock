@@ -130,6 +130,16 @@
                         </div>
                     </div>
                 </div>
+                <h2 class="font-bold text-dark mt-6 mb-1">Fonctionnalités</h2>
+                <p class="text-xs text-slate-400 mb-3">Appliquer à toute la boutique</p>
+                <label class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+                    <span class="min-w-0">
+                        <span class="block text-sm font-semibold text-dark">Scanner de codes-barres</span>
+                        <span class="block text-xs text-slate-400">Page, menu et API de scan</span>
+                    </span>
+                    <input type="checkbox" name="scanner_enabled" value="1" {% if shop.scanner_enabled %}checked{% endif %}
+                           class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary flex-shrink-0">
+                </label>
                 <h2 class="font-bold text-dark mt-6 mb-1">Son des notifications</h2>
                 <p class="text-xs text-slate-400 mb-3">Réglage de ce PC uniquement</p>
                 <div class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
