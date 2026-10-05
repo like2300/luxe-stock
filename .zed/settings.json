@@ -1,0 +1,7 @@
+{
+  // Le serveur prettier de Zed reformatait les .html et coupait les balises
+  // {% ... %} / {{ ... }} sur plusieurs lignes, ce que le lexer de Django
+  // ne sait pas analyser (TemplateSyntaxError). Formatage desactive ici.
+  "format_on_save": "off",
+  "autosave": "after_delay"
+}

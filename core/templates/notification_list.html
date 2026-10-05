@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% load static core_tags %}
+{% block page_title %}Notifications - Luxe{% endblock %}
+{% block breadcrumbs %}
+    <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+    <iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+    <span class="text-primary">Notifications</span>
+{% endblock %}
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 gap-x-4 gap-y-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Notifications</h1>
+        <p class="text-slate-500">Filtrez vos alertes.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <form method="post" action="{% url 'notification_read_all' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-white hover:shadow-sm hover:border-primary/30 hover:text-primary transition-all">
+                <iconify-icon icon="solar:check-circle-linear" width="18"></iconify-icon>
+                <span>Tout lire</span>
+            </button>
+        </form>
+        <form method="post" action="{% url 'notification_clear' %}" onsubmit="return confirm('Supprimer toutes les notifications ?')">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-500 transition-all">
+                <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                <span>Tout effacer</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <!-- Barre de filtres : tout est pilote en JS, sans rechargement -->
+    <div class="p-6 border-b border-slate-50 space-y-4">
+        <div class="flex flex-col xl:flex-row xl:items-center gap-4">
+            <div class="relative w-full xl:w-64">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" id="search-notifications" placeholder="Rechercher…" data-suggest-url="{% url 'suggest_notifications' %}" data-suggest-submit="0" class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full" value="{{ q|default:'' }}" autocomplete="off">
+            </div>
+
+            <!-- Boutons pilotes par couleur -->
+            <div id="level-buttons" class="flex flex-wrap items-center gap-2">
+                {% level_palette as palette %}
+                <button type="button" data-level="" class="level-btn flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 text-slate-600 hover:border-primary/30 hover:text-primary transition-all">Tous</button>
+                {% for color in palette %}
+                <button type="button" data-level="{{ color.code }}" class="level-btn flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 text-slate-600 hover:border-primary/30 hover:text-primary transition-all">
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: {{ color.fg }};"></span>
+                    {{ color.label }}
+                </button>
+                {% endfor %}
+            </div>
+
+            <div class="flex items-center gap-4 xl:ml-auto">
+                <label class="inline-flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap">
+                    <input type="checkbox" id="unread-filter" {% if unread %}checked{% endif %} class="h-4 w-4 text-primary focus:ring-primary border-slate-300 rounded">
+                    <span>Non lues</span>
+                </label>
+                <button type="button" id="notif-reset" class="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 text-slate-500 hover:border-primary/30 hover:text-primary transition-all whitespace-nowrap">Réinitialiser</button>
+            </div>
+        </div>
+
+        <p class="text-xs text-slate-400"><span id="notif-count">0</span> sur {{ total }}{% if truncated %} · {{ truncated }} plus anciennes{% endif %}</p>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Type</th>
+                    <th class="px-6 py-4">Message</th>
+                    <th class="px-6 py-4">Produit</th>
+                    <th class="px-6 py-4">Quantité</th>
+                    <th class="px-6 py-4">Date</th>
+                    <th class="px-6 py-4">Son</th>
+                    <th class="px-6 py-4">Statut</th>
+                </tr>
+            </thead>
+            <tbody id="notification-list">
+                {% for n in notifications %}
+                <tr class="notif group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0 {% if not n.is_read %}unread bg-slate-50/50{% endif %}"
+                    data-level="{{ n.level }}"
+                    data-read="{% if n.is_read %}1{% else %}0{% endif %}"
+                    data-sound="{{ n.sound_code }}"
+                    data-search="{{ n.label }} {{ n.message }} {{ n.product.name|default:'' }} {{ n.sound_code }} {{ n.quantity }}">
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style="background-color: {{ n.colors.0 }}; color: {{ n.colors.1 }};">
+                            {{ n.label }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4">{{ n.message }}</td>
+                    <td class="px-6 py-4">{{ n.product.name|default:"—" }}</td>
+                    <td class="px-6 py-4">{{ n.quantity }}</td>
+                    <td class="px-6 py-4">{{ n.created_at|date:"d/m/Y H:i" }}</td>
+                    <td class="px-6 py-4">
+                        <button type="button" class="play inline-flex items-center gap-2 text-slate-400 hover:text-primary transition-colors" data-code="{{ n.sound_code }}" data-tone="{{ n.tone }}" title="{{ n.sound_code }}">
+                            <iconify-icon icon="solar:volume-loud-linear" width="18"></iconify-icon>
+                            <span class="font-mono text-[10px] text-slate-400">{{ n.sound_code }}</span>
+                        </button>
+                    </td>
+                    <td class="px-6 py-4">
+                        {% if not n.is_read %}
+                        <form method="post" action="{% url 'notification_read' n.pk %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <button type="submit" title="Marquer comme lue" class="text-slate-400 hover:text-primary transition-colors">
+                                <iconify-icon icon="solar:check-circle-linear" width="18"></iconify-icon>
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-emerald-500">
+                            <iconify-icon icon="solar:check-circle-linear" width="18"></iconify-icon>
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr id="notif-empty" class="{% if notifications %}hidden{% endif %}">
+                    <td colspan="7" class="px-6 py-10 text-center text-slate-400">Aucune notification trouvée.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination pilotee en JS -->
+    <div class="px-6 py-4 border-t border-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <p class="text-xs text-slate-500"><span id="notif-range">0</span> affiche(s)</p>
+        <div id="notif-pages" class="flex flex-wrap gap-2"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Bips des notifications (Web Audio API) -->
+<script src="{% static 'js/sounds.js' %}"></script>
+
+<script>
+    /* Filtrage et pagination des notifications : tout est calcule dans le
+       navigateur, la page ne se recharge jamais. */
+    document.addEventListener('DOMContentLoaded', function () {
+        var tbody = document.getElementById('notification-list');
+        if (!tbody) return;
+
+        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr.notif'));
+        var emptyRow = document.getElementById('notif-empty');
+        var search = document.getElementById('search-notifications');
+        var unreadBox = document.getElementById('unread-filter');
+        var levelBtns = Array.prototype.slice.call(
+            document.querySelectorAll('#level-buttons .level-btn'));
+        var resetBtn = document.getElementById('notif-reset');
+        var countOut = document.getElementById('notif-count');
+        var rangeOut = document.getElementById('notif-range');
+        var pagesOut = document.getElementById('notif-pages');
+
+        var PER_PAGE = 25;
+        var state = { q: search.value.trim(), level: '', unread: unreadBox.checked, page: 1 };
+        var matched = rows.slice();
+
+        // Minuscules sans accent : "rupture" trouve aussi "Rupture de stock".
+        function clean(value) {
+            return (value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        }
+
+        rows.forEach(function (row) {
+            row.dataset.searchIndex = clean(row.dataset.search);
+        });
+
+        function keep(row, term) {
+            if (state.level && row.dataset.level !== state.level) return false;
+            if (state.unread && row.dataset.read !== '0') return false;
+            return !term || row.dataset.searchIndex.indexOf(term) !== -1;
+        }
+
+        function pageButton(label, target, active, disabled) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = label;
+            b.className = 'px-3 py-1 rounded-md border text-xs transition-colors ' +
+                (active ? 'bg-primary text-white border-primary'
+                        : 'border-slate-200 text-slate-500 hover:border-primary hover:text-primary');
+            if (disabled) {
+                b.disabled = true;
+            } else {
+                b.addEventListener('click', function () { state.page = target; apply(); });
+            }
+            return b;
+        }
+
+        function renderPages() {
+            pagesOut.innerHTML = '';
+            var pages = Math.ceil(matched.length / PER_PAGE);
+            if (pages < 2) return;
+            pagesOut.appendChild(pageButton('Précédent', state.page - 1, false, state.page === 1));
+            for (var i = 1; i <= pages; i++) {
+                pagesOut.appendChild(pageButton(String(i), i, i === state.page, false));
+            }
+            pagesOut.appendChild(pageButton('Suivant', state.page + 1, false, state.page === pages));
+        }
+
+        function syncUrl() {
+            var params = new URLSearchParams();
+            if (state.q) params.set('q', state.q);
+            if (state.level) params.set('level', state.level);
+            if (state.unread) params.set('unread', '1');
+            var query = params.toString();
+            history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
+        }
+
+        function paintLevelBtns() {
+            levelBtns.forEach(function (btn) {
+                var on = btn.dataset.level === state.level;
+                btn.classList.toggle('border-primary', on);
+                btn.classList.toggle('bg-secondary', on);
+                btn.classList.toggle('text-primary', on);
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+        }
+
+        function apply() {
+            var term = clean(state.q);
+            matched = rows.filter(function (row) { return keep(row, term); });
+
+            var pages = Math.max(Math.ceil(matched.length / PER_PAGE), 1);
+            if (state.page > pages) state.page = pages;
+            var from = (state.page - 1) * PER_PAGE;
+
+            rows.forEach(function (row) { row.style.display = 'none'; });
+            matched.slice(from, from + PER_PAGE).forEach(function (row) { row.style.display = ''; });
+
+            emptyRow.classList.toggle('hidden', matched.length > 0);
+            countOut.textContent = matched.length;
+            rangeOut.textContent = matched.length
+                ? (from + 1) + '-' + Math.min(from + PER_PAGE, matched.length)
+                : '0';
+            renderPages();
+            syncUrl();
+        }
+
+        var timer = null;
+        search.addEventListener('input', function () {
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+                state.q = search.value.trim();
+                state.page = 1;
+                apply();
+            }, 120);
+        });
+        levelBtns.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                state.level = btn.dataset.level;
+                state.page = 1;
+                paintLevelBtns();
+                apply();
+            });
+        });
+        unreadBox.addEventListener('change', function () {
+            state.unread = unreadBox.checked;
+            state.page = 1;
+            apply();
+        });
+        resetBtn.addEventListener('click', function () {
+            search.value = '';
+            unreadBox.checked = false;
+            state = { q: '', level: '', unread: false, page: 1 };
+            paintLevelBtns();
+            apply();
+        });
+
+        // Niveau initial repris de l'URL (?level=rupture).
+        var initial = new URLSearchParams(window.location.search).get('level') || '';
+        var known = levelBtns.some(function (b) { return b.dataset.level === initial; });
+        state.level = known ? initial : '';
+        paintLevelBtns();
+        apply();
+    });
+</script>
+{% endblock %}

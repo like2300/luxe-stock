@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block page_title %}Tableau de Bord - Luxe{% endblock %}
+{% block breadcrumbs %}
+    <span class="text-primary">Tableau de bord</span>
+{% endblock %}
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+    <div>
+        <h1 class="md:text-4xl text-3xl font-bold text-dark font-poppins mb-2">Bonjour, {% if request.user.first_name or request.user.last_name %}{{ request.user.first_name }} {{ request.user.last_name }}{% else %}{{ request.user.username }}{% endif %}</h1>
+        <p class="text-slate-500">Voici ce qui se passe avec votre boutique aujourd'hui.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <button class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-white hover:shadow-sm hover:border-primary/30 hover:text-primary transition-all">
+            <iconify-icon icon="solar:calendar-date-linear" width="18" height="18" style="color: rgb(88, 2, 247);"></iconify-icon>
+            <span>Derniers 30 jours</span>
+        </button>
+        <a href="{% url 'product_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+            <iconify-icon icon="solar:add-circle-linear" width="18"></iconify-icon>
+            <span>Nouveau Produit</span>
+        </a>
+    </div>
+</div>
+
+<!-- Stats Cards Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <!-- Card 1 - Total Revenue -->
+    <div class="hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all duration-300 group bg-white border-slate-50 border rounded-2xl pt-6 pr-6 pb-6 pl-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)]">
+        <div class="flex justify-between items-start mb-4">
+            <div class="w-12 h-12 rounded-xl bg-pastelPurple text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
+                <iconify-icon icon="solar:dollar-minimalistic-linear" width="24" stroke-width="1.5"></iconify-icon>
+            </div>
+            <span class="flex items-center text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                +{{ value_increase|default:0 }}% <iconify-icon icon="solar:arrow-right-up-linear" class="ml-1"></iconify-icon>
+            </span>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Revenu Total</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ value|floatformat:0 }} {{ shop.currency }}</p>
+    </div>
+
+    <!-- Card 2 - Total Orders -->
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all duration-300 border border-slate-50 group">
+        <div class="flex justify-between items-start mb-4">
+            <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <iconify-icon icon="solar:bag-3-linear" width="24" stroke-width="1.5"></iconify-icon>
+            </div>
+            <span class="flex items-center text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                +5.2% <iconify-icon icon="solar:arrow-right-up-linear" class="ml-1"></iconify-icon>
+            </span>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Nombre de Produits</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ n_products }}</p>
+    </div>
+
+    <!-- Card 3 - Low Stock -->
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all duration-300 border border-slate-50 group">
+        <div class="flex justify-between items-start mb-4">
+            <div class="w-12 h-12 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <iconify-icon icon="solar:danger-triangle-linear" width="24" stroke-width="1.5"></iconify-icon>
+            </div>
+            <span class="flex items-center text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-1 rounded-full">
+                {{ n_low }} <iconify-icon icon="solar:arrow-right-down-linear" class="ml-1"></iconify-icon>
+            </span>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Stock Bas</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ n_low }}</p>
+    </div>
+
+    <!-- Card 4 - Catégories -->
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all duration-300 border border-slate-50 group">
+        <div class="flex justify-between items-start mb-4">
+            <div class="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <iconify-icon icon="solar:tag-linear" width="24" stroke-width="1.5"></iconify-icon>
+            </div>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Catégories</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ n_categories }}</p>
+    </div>
+</div>
+
+<!-- Grid for Low Stock and Recent Movements -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Low Stock Products -->
+    <div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+        <div class="p-6 border-b border-slate-50 flex justify-between items-center">
+            <h3 class="text-dark text-lg font-semibold font-poppins">Produits à Réapprovisionner</h3>
+            <a href="{% url 'product_list' %}?low=1" class="text-primary text-sm font-medium hover:underline">Voir tous</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                    <tr>
+                        <th class="px-6 py-4">Produit</th>
+                        <th class="px-6 py-4">Stock</th>
+                        <th class="px-6 py-4">Seuil</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in low_products %}
+                    <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                        <td class="px-6 py-4">{{ p.name }}</td>
+                        <td class="px-6 py-4"><span class="badge red">{{ p.quantity }}</span></td>
+                        <td class="px-6 py-4">{{ p.alert_threshold }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="px-6 py-4 text-center text-slate-400">Tout est en ordre.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent Movements -->
+    <div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+        <div class="p-6 border-b border-slate-50 flex justify-between items-center">
+            <h3 class="text-dark text-lg font-semibold font-poppins">Derniers Mouvements</h3>
+            <a href="{% url 'movement_list' %}" class="text-primary text-sm font-medium hover:underline">Voir tous</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                    <tr>
+                        <th class="px-6 py-4">Produit</th>
+                        <th class="px-6 py-4">Type</th>
+                        <th class="px-6 py-4">Quantité</th>
+                        <th class="px-6 py-4">Par</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in recent %}
+                    <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                        <td class="px-6 py-4">{{ m.product.name }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {% if m.kind == 'IN' %}bg-emerald-100 text-emerald-700{% else %}bg-orange-100 text-orange-700{% endif %}">
+                                {{ m.get_kind_display }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">{{ m.quantity }}</td>
+                        <td class="px-6 py-4">{{ m.user.username|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-slate-400">Aucun mouvement.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Section -->
+<div class="mt-8 bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-6">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h3 class="text-dark text-lg font-semibold font-poppins">Analyse des Mouvements</h3>
+            <p class="text-xs text-slate-400">Évolution du stock sur les derniers mois</p>
+        </div>
+        <button class="text-slate-400 hover:text-primary transition-colors">
+            <iconify-icon icon="solar:menu-dots-linear" width="24"></iconify-icon>
+        </button>
+    </div>
+    <div class="h-64 w-full relative">
+        <canvas id="stockChart" style="display: block; box-sizing: border-box; height: 256px; width: 100%;"></canvas>
+    </div>
+</div>
+
+<!-- Script pour le graphique -->
+{{ chart|json_script:"stock-chart-data" }}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof Chart === 'undefined') return;
+
+        const canvas = document.getElementById('stockChart');
+        if (!canvas) return;
+
+        const node = document.getElementById('stock-chart-data');
+        const data = node ? JSON.parse(node.textContent) : {labels: [], entries: [], exits: [], total: []};
+
+        const hasData = data.labels.some(function(v, i) {
+            return data.entries[i] || data.exits[i];
+        });
+
+        new Chart(canvas.getContext('2d'), {
+            data: {
+                labels: data.labels,
+                datasets: [
+                    {
+                        type: 'line',
+                        label: 'Stock total',
+                        data: data.total,
+                        borderColor: '#5802f7',
+                        backgroundColor: 'rgba(88, 2, 247, 0.1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#5802f7',
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        tension: 0.4,
+                        order: 0
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Entrées',
+                        data: data.entries,
+                        backgroundColor: 'rgba(16, 185, 129, 0.55)',
+                        borderRadius: 6,
+                        barPercentage: 0.6,
+                        categoryPercentage: 0.7,
+                        order: 1
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Sorties',
+                        data: data.exits,
+                        backgroundColor: 'rgba(244, 63, 94, 0.55)',
+                        borderRadius: 6,
+                        barPercentage: 0.6,
+                        categoryPercentage: 0.7,
+                        order: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {usePointStyle: true, pointStyle: 'circle', boxWidth: 8}
+                    },
+                    tooltip: {
+                        backgroundColor: 'white',
+                        titleColor: '#1a1a1a',
+                        bodyColor: '#64748b',
+                        borderColor: '#e2e8f0',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ' : ' + context.parsed.y + ' unités';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {borderDash: [4, 4]},
+                        ticks: {callback: function(value) { return value + ' u'; }}
+                    },
+                    x: {grid: {display: false}}
+                }
+            },
+            plugins: [{
+                id: 'emptyMessage',
+                afterDraw: function(chart) {
+                    if (hasData) return;
+                    const ctx = chart.ctx;
+                    const {left, right, top, bottom} = chart.chartArea;
+                    ctx.save();
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.font = '13px Montserrat, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('Aucun mouvement sur la période', (left + right) / 2, (top + bottom) / 2);
+                    ctx.restore();
+                }
+            }]
+        });
+    });
+</script>
+{% endblock %}

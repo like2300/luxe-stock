@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block page_title %}Catégories - Luxe{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Catégories</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Liste des Catégories</h1>
+        <p class="text-slate-500">Gérez les catégories de vos produits.</p>
+    </div>
+    {% if sp.can_manage_categories %}
+    <button type="button" onclick="openCategoryModal()" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all self-start md:self-auto">
+        <iconify-icon icon="solar:add-circle-linear" width="18"></iconify-icon>
+        <span>Nouvelle Catégorie</span>
+    </button>
+    {% endif %}
+</div>
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-4 rounded-xl text-sm font-medium {% if message.tags == 'success' %}bg-emerald-50 border border-emerald-100 text-emerald-700{% else %}bg-rose-50 border border-rose-100 text-rose-700{% endif %}">{{ message }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Popup Nouvelle Catégorie -->
+{% if sp.can_manage_categories %}
+<div id="category-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-dark/50 backdrop-blur-sm" onclick="closeCategoryModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-[fadeIn_.2s_ease-out]">
+        <div class="flex items-center justify-between mb-1">
+            <h2 class="text-lg font-bold text-dark font-poppins">Nouvelle Catégorie</h2>
+            <button type="button" onclick="closeCategoryModal()" class="text-slate-400 hover:text-rose-500 p-1.5 rounded-full hover:bg-rose-50 transition-colors" title="Fermer">
+                <iconify-icon icon="solar:close-circle-linear" width="22"></iconify-icon>
+            </button>
+        </div>
+        <p class="text-sm text-slate-400 mb-5">Ajoutez une catégorie pour organiser vos produits.</p>
+        <form method="post">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-100 text-sm text-rose-700">
+                {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+            </div>
+            {% endif %}
+            <div class="relative w-full">
+                <iconify-icon icon="solar:tag-linear" class="absolute left-3 top-3 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="name" id="nouvelle-categorie" value="{{ form.name.value|default_if_none:'' }}" placeholder="Nom de la catégorie" autofocus class="pl-9 pr-4 py-2.5 w-full text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors">
+            </div>
+            {% if form.name.errors %}
+            <p class="mt-2 text-sm text-rose-600">{{ form.name.errors.0 }}</p>
+            {% endif %}
+            <div class="mt-6 flex justify-end gap-3">
+                <button type="button" onclick="closeCategoryModal()" class="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                    Annuler
+                </button>
+                <button type="submit" class="px-5 py-2.5 rounded-lg text-white text-sm font-medium shadow-lg transition-all" style="background-color: var(--shop-primary);">
+                    Ajouter
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+
+    <div class="p-6 border-b border-slate-50">
+        <form method="get" class="w-full sm:w-72">
+            <div class="relative w-full">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="q" value="{{ q }}" placeholder="Rechercher une catégorie..." data-suggest-url="{% url 'suggest_categories' %}" class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
+            </div>
+        </form>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Nom</th>
+                    <th class="px-6 py-4">Nombre de Produits</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for category in categories %}
+                <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                    <td class="px-6 py-4 font-medium text-dark">{{ category.name }}</td>
+                    <td class="px-6 py-4">{{ category.products.count }}</td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex gap-2 justify-end">
+                            {% if sp.can_manage_categories %}
+                            <form method="post" action="{% url 'category_delete' category.pk %}" class="inline" onsubmit="return confirm('Supprimer cette catégorie ?');">
+                                {% csrf_token %}
+                                <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="3" class="px-6 py-4 text-center text-slate-400">Aucune catégorie trouvée.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openCategoryModal() {
+    var m = document.getElementById('category-modal');
+    if (!m) return;
+    m.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    setTimeout(function() {
+        var inp = document.getElementById('nouvelle-categorie');
+        if (inp) inp.focus();
+    }, 50);
+}
+function closeCategoryModal() {
+    var m = document.getElementById('category-modal');
+    if (!m) return;
+    m.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeCategoryModal();
+});
+{% if form.errors %}
+document.addEventListener('DOMContentLoaded', function() { openCategoryModal(); });
+{% endif %}
+</script>
+{% endblock %}

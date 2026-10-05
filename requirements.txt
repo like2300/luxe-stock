@@ -1,0 +1,7 @@
+Django>=5.0
+Pillow>=10.0
+django-allauth>=0.63.0
+django-unfold>=0.60.0
+python-decouple>=3.8
+requests
+PyJWT>=2.8.0

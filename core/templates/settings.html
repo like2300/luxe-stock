@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block page_title %}Paramètres - Luxe{% endblock %}
+{% block breadcrumbs %}
+    <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+    <iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+    <span class="text-primary">Paramètres</span>
+{% endblock %}
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 gap-x-4 gap-y-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Paramètres de la Boutique</h1>
+        <p class="text-slate-500">Identité de votre société : les couleurs s'appliquent à tout le site.</p>
+    </div>
+    <form method="post" class="inline" onsubmit="return confirm('Réinitialiser les couleurs par défaut ?');">
+        {% csrf_token %}
+        <input type="hidden" name="reset" value="1">
+        <button type="submit" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-white transition-all">
+            <iconify-icon icon="solar:restart-linear" width="18"></iconify-icon>
+            <span>Réinitialiser</span>
+        </button>
+    </form>
+</div>
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-4 rounded-xl text-sm font-medium bg-emerald-50 border border-emerald-100 text-emerald-700">{{ message }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <!-- Identité -->
+            <div class="bg-white rounded-2xl border border-slate-50 shadow-sm p-6">
+                <h2 class="font-bold text-dark mb-1">Identité</h2>
+                <p class="text-xs text-slate-400 mb-5">Nom, logo et devise</p>
+                <div class="space-y-4">
+                <div>
+                    <label for="id_name" class="block text-sm font-medium text-slate-700 mb-1">Nom de la Boutique *</label>
+                    <input type="text" name="name" id="id_name" value="{{ shop.name }}" class="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm" required>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="id_phone" class="block text-sm font-medium text-slate-700 mb-1">Téléphone</label>
+                    <input type="text" name="phone" id="id_phone" value="{{ shop.phone }}" class="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Devise</label>
+                    <input type="text" name="currency" value="{{ shop.currency }}" class="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm">
+                </div>
+                </div>
+
+                <div>
+                    <label for="id_address" class="block text-sm font-medium text-slate-700 mb-1">Adresse</label>
+                    <input type="text" name="address" id="id_address" value="{{ shop.address }}" class="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Logo de la société</label>
+                    <div class="flex items-center gap-4 p-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                        <div id="logo-preview" class="w-20 h-20 rounded-xl overflow-hidden bg-white border flex items-center justify-center shrink-0">
+                            {% if shop.logo %}
+                            <img src="{{ shop.logo.url }}" alt="Logo" class="w-full h-full object-cover">
+                            {% else %}
+                            <iconify-icon icon="solar:gallery-add-linear" width="30" class="text-slate-300"></iconify-icon>
+                            {% endif %}
+                        </div>
+                        <div class="flex-1">
+                            <label for="id_logo" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-sm cursor-pointer">
+                                <iconify-icon icon="solar:upload-linear" width="16"></iconify-icon>
+                                <span id="logo-label">Choisir un logo</span>
+                            </label>
+                            <input type="file" name="logo" id="id_logo" accept="image/*" class="hidden">
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <!-- Couleurs -->
+            <div class="bg-white rounded-2xl border border-slate-50 shadow-sm p-6">
+                <h2 class="font-bold text-dark mb-1">Couleurs du site</h2>
+                <p class="text-xs text-slate-400 mb-5">Aperçu en temps réel à droite</p>
+                <div class="space-y-3">
+                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 cursor-pointer">
+                    <input type="color" name="primary_color" value="{{ shop.primary_color }}" class="w-12 h-12 rounded-lg cursor-pointer border-0 p-0 bg-transparent shrink-0" data-preview="primary">
+                    <span class="flex-1"><span class="block text-sm font-semibold text-dark">Principale</span><span class="block text-xs text-slate-400">Boutons, liens</span></span>
+                    <code id="hex-primary" class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{{ shop.primary_color }}</code>
+                </label>
+                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 cursor-pointer">
+                    <input type="color" name="sidebar_color" value="{{ shop.sidebar_color }}" class="w-12 h-12 rounded-lg cursor-pointer border-0 p-0 bg-transparent shrink-0" data-preview="sidebar">
+                    <span class="flex-1"><span class="block text-sm font-semibold text-dark">Menu</span><span class="block text-xs text-slate-400">Barre latérale</span></span>
+                    <code id="hex-sidebar" class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{{ shop.sidebar_color }}</code>
+                </label>
+                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 cursor-pointer">
+                    <input type="color" name="header_color" value="{{ shop.header_color }}" class="w-12 h-12 rounded-lg cursor-pointer border-0 p-0 bg-transparent shrink-0" data-preview="header">
+                    <span class="flex-1"><span class="block text-sm font-semibold text-dark">En-têtes</span><span class="block text-xs text-slate-400">Titre des listes</span></span>
+                    <code id="hex-header" class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{{ shop.header_color }}</code>
+                </label>
+                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 cursor-pointer">
+                    <input type="color" name="background_color" value="{{ shop.background_color }}" class="w-12 h-12 rounded-lg cursor-pointer border-0 p-0 bg-transparent shrink-0" data-preview="bg">
+                    <span class="flex-1"><span class="block text-sm font-semibold text-dark">Fond</span><span class="block text-xs text-slate-400">Arrière-plan</span></span>
+                    <code id="hex-bg" class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{{ shop.background_color }}</code>
+                </label>
+                </div>
+                {% for field in form %}{% for e in field.errors %}<small class="err">{{ e }}</small>{% endfor %}{% endfor %}
+            </div>
+            <!-- Aperçu + Son -->
+            <div class="bg-white rounded-2xl border border-slate-50 shadow-sm p-6">
+                <h2 class="font-bold text-dark mb-1">Aperçu en direct</h2>
+                <p class="text-xs text-slate-400 mb-4">Votre site avec ces couleurs</p>
+                <div id="live-preview" class="rounded-xl overflow-hidden border border-slate-200" style="background-color: {{ shop.background_color }};">
+                    <div class="flex">
+                        <div id="pv-side" class="w-1/3 p-3 space-y-2" style="background-color: {{ shop.sidebar_color }};">
+                            <div class="flex items-center gap-1.5">
+                                <div id="pv-logo" class="w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-bold" style="background-color: {{ shop.primary_color }};">L</div>
+                                <div class="h-2 w-12 rounded bg-slate-400/40"></div>
+                            </div>
+                            <div id="pv-link" class="h-6 rounded-md" style="background-color: {{ shop.primary_color }}33;"></div>
+                            <div class="h-6 rounded-md bg-slate-400/20"></div>
+                        </div>
+                        <div class="flex-1 p-3 space-y-2">
+                            <div id="pv-btn" class="h-7 rounded-md w-2/3" style="background-color: {{ shop.primary_color }};"></div>
+                            <div id="pv-head" class="h-6 rounded-md" style="background-color: {{ shop.header_color }};"></div>
+                            <div class="h-6 rounded-md bg-white border border-slate-200"></div>
+                        </div>
+                    </div>
+                </div>
+                <h2 class="font-bold text-dark mt-6 mb-1">Son des notifications</h2>
+                <p class="text-xs text-slate-400 mb-3">Réglage de ce PC uniquement</p>
+                <div class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                    <p id="sound-state-label" class="text-sm font-semibold text-dark">Son activé</p>
+                    <button type="button" id="sound-toggle-settings" class="sound-switch on" aria-label="Son"></button>
+                </div>
+                <button type="button" id="sound-test-settings" class="mt-3 w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600">Tester le son</button>
+            </div>
+        </div>
+
+        <div class="mt-6 flex flex-col-reverse sm:flex-row justify-end gap-3">
+            <a href="{% url 'dashboard' %}" class="px-6 py-3 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 bg-white text-center shadow-sm">
+                Annuler
+            </a>
+            <button type="submit" class="px-8 py-3 rounded-xl text-white text-sm font-semibold shadow-lg" style="background-color: var(--shop-primary);">
+                Enregistrer les Paramètres
+            </button>
+        </div>
+    </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var li = document.getElementById('id_logo');
+    if (li) li.addEventListener('change', function() {
+        var f = this.files && this.files[0];
+        var lab = document.getElementById('logo-label');
+        if (lab) lab.textContent = f ? f.name : 'Choisir un logo';
+        if (!f) return;
+        var r = new FileReader();
+        r.onload = function(e) {
+            document.getElementById('logo-preview').innerHTML = '<img src="' + e.target.result + '" class="w-full h-full object-cover">';
+        };
+        r.readAsDataURL(f);
+    });
+    function rgba(hex, a) {
+        var h = hex.replace('#', '');
+        if (h.length === 3) h = h.split('').map(function(c){ return c + c; }).join('');
+        var n = parseInt(h, 16);
+        return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    }
+    document.querySelectorAll('input[type="color"][data-preview]').forEach(function(inp) {
+        inp.addEventListener('input', function() {
+            var k = inp.dataset.preview;
+            var code = document.getElementById('hex-' + k);
+            if (code) code.textContent = inp.value;
+            if (k === 'primary') {
+                document.getElementById('pv-btn').style.backgroundColor = inp.value;
+                document.getElementById('pv-logo').style.backgroundColor = inp.value;
+                document.getElementById('pv-link').style.backgroundColor = rgba(inp.value, 0.2);
+            } else if (k === 'sidebar') {
+                document.getElementById('pv-side').style.backgroundColor = inp.value;
+            } else if (k === 'header') {
+                document.getElementById('pv-head').style.backgroundColor = inp.value;
+            } else if (k === 'bg') {
+                document.getElementById('live-preview').style.backgroundColor = inp.value;
+            }
+        });
+    });
+    var KEY = 'stockpro_sound_enabled';
+    function on() { var v = localStorage.getItem(KEY); return v === null ? true : v === '1'; }
+    var sw = document.getElementById('sound-toggle-settings');
+    var sl = document.getElementById('sound-state-label');
+    function ref() {
+        if (sw) sw.classList.toggle('on', on());
+        if (sl) sl.textContent = on() ? 'Son activé' : 'Son coupé';
+    }
+    ref();
+    if (sw) sw.addEventListener('click', function() {
+        localStorage.setItem(KEY, on() ? '0' : '1');
+        ref();
+        if (on() && typeof window.playNotificationSound === 'function') window.playNotificationSound('AJOUT');
+    });
+    var tb = document.getElementById('sound-test-settings');
+    if (tb) tb.addEventListener('click', function() {
+        if (typeof window.playNotificationSound === 'function') window.playNotificationSound('AJOUT');
+    });
+});
+</script>
+{% endblock %}

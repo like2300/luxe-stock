@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block page_title %}Employés - Luxe{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Employés</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Liste des Employés</h1>
+        <p class="text-slate-500">Gérez les comptes des employés.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        {% if request.membership.is_owner %}
+        <a href="{% url 'employee_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+            <iconify-icon icon="solar:user-plus-rounded-linear" width="18"></iconify-icon>
+            <span>Nouvel Employé</span>
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <div class="p-6 border-b border-slate-50">
+        <form method="get" class="flex flex-col sm:flex-row gap-3 w-full sm:w-96">
+            <div class="relative w-full">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="q" value="{{ q }}" placeholder="Rechercher un employé..." data-suggest-url="{% url 'suggest_employees' %}" class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
+            </div>
+            <button type="submit" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:opacity-90 transition-opacity shrink-0">
+                <iconify-icon icon="solar:magnifier-linear" width="16"></iconify-icon>
+                <span>Rechercher</span>
+            </button>
+            {% if q %}
+            <a href="{% url 'employee_list' %}" class="flex items-center justify-center px-3 py-2 text-sm text-slate-400 hover:text-rose-500 transition-colors shrink-0" title="Effacer la recherche">
+                <iconify-icon icon="solar:close-circle-linear" width="18"></iconify-icon>
+            </a>
+            {% endif %}
+        </form>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Nom</th>
+                    <th class="px-6 py-4">Rôle</th>
+                    <th class="px-6 py-4">Permissions</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold">
+                                {{ row.member.user.username|slice:":2"|upper }}
+                            </div>
+                            <span class="font-medium text-dark">{{ row.member.user.get_full_name|default:row.member.user.username }}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">Employé</td>
+                    <td class="px-6 py-4">
+                        <div class="flex flex-wrap gap-1">
+                            {% for perm in row.granted %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">{{ perm }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex gap-2 justify-end">
+                            {% if request.membership.is_owner %}
+                            <a href="{% url 'employee_edit' row.member.pk %}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Modifier">
+                                <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                            </a>
+                            <form method="post" action="{% url 'employee_delete' row.member.pk %}" class="inline" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cet employé ?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.path }}{% if qs %}?{{ qs }}{% endif %}">
+                                <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="px-6 py-4 text-center text-slate-400">
+                        {% if q %}Aucun employé ne correspond à « {{ q }} ».{% else %}Aucun employé trouvé.{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

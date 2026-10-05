@@ -1,0 +1,43 @@
+<div class="product-autocomplete" data-product-autocomplete data-kind="{{ widget.kind }}">
+    <div class="relative">
+        <iconify-icon icon="solar:magnifier-linear" width="16" class="absolute left-3 top-3.5 text-slate-400 pointer-events-none"></iconify-icon>
+        <input type="text"
+               data-role="search"
+               data-endpoint="{{ widget.endpoint }}"
+               data-placeholder="{{ widget.search_placeholder }}"
+               role="combobox"
+               aria-autocomplete="list"
+               aria-expanded="false"
+               aria-controls="{{ widget.search_id }}-listbox"
+               aria-label="{{ widget.search_placeholder }}"
+               autocomplete="off"
+               spellcheck="false"
+               placeholder="{{ widget.search_placeholder }}"
+               value="{{ widget.selected_label }}"
+               class="pl-9 pr-10 py-2.5 w-full text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors" />
+
+        <button type="button" data-role="clear" title="Effacer la recherche" aria-label="Effacer la recherche"
+                class="absolute right-3 top-2.5 p-1 rounded-full text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors {% if not widget.selected_label %}hidden{% endif %}">
+            <iconify-icon icon="solar:close-circle-linear" width="16"></iconify-icon>
+        </button>
+
+        <ul id="{{ widget.search_id }}-listbox" data-role="listbox" role="listbox" aria-label="Produits suggérés"
+            class="hidden absolute z-40 mt-1 w-full max-h-72 overflow-y-auto overscroll-contain bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 py-1">
+        </ul>
+    </div>
+
+    <p data-role="status" aria-live="polite" class="mt-1.5 text-xs text-slate-500"></p>
+
+    <details data-role="fallback" class="mt-2 group">
+        <summary class="cursor-pointer select-none text-xs text-slate-500 hover:text-primary transition-colors inline-flex items-center gap-1">
+            <iconify-icon icon="solar:alt-arrow-right-linear" width="12" class="transition-transform group-open:rotate-90"></iconify-icon>
+            {% if widget.kind == "category" %}Afficher toutes les catégories{% else %}Afficher tous les produits{% endif %}
+        </summary>
+        <div class="mt-2">
+            <select name="{{ widget.name }}"
+                {% for attr, value in widget.attrs.items %}{% if value is not False %} {{ attr }}{% if value is not True %}="{{ value|stringformat:'s' }}"{% endif %}{% endif %}{% endfor %}>
+                {% for group_name, group_choices, group_index in widget.optgroups %}{% for option in group_choices %}<option value="{{ option.value|stringformat:'s' }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>{% endfor %}{% endfor %}
+            </select>
+        </div>
+    </details>
+</div>

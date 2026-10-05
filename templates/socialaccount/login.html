@@ -1,0 +1,57 @@
+{% extends "socialaccount/base_entrance.html" %}
+
+{% load i18n %}
+
+{% load allauth %}
+
+{% block head_title %}{% trans "Sign In" %}{% endblock head_title %}
+
+{% block content %}
+
+<div class="max-w-md mx-auto mt-10 p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+
+  {% if process == "connect" %}
+
+    <h1 class="text-2xl font-bold mb-4 flex items-center justify-center gap-2">
+
+      <span class="material-symbols-outlined text-blue-600">link</span>
+
+      {% blocktrans with provider.name as provider %}Connecter {{ provider }}{% endblocktrans %}
+
+    </h1>
+
+    <p class="mb-4 text-gray-600 text-center">{% blocktrans with provider.name as provider %}Vous allez connecter votre compte {{ provider }} à votre compte existant.{% endblocktrans %}</p>
+
+  {% else %}
+
+    <h1 class="text-2xl font-bold mb-4 flex items-center justify-center gap-2">
+
+      <span class="material-symbols-outlined text-red-500">login</span>
+
+      {% blocktrans with provider.name as provider %}Connexion avec {{ provider }}{% endblocktrans %}
+
+    </h1>
+
+    <p class="mb-4 text-gray-600 text-center">{% blocktrans with provider.name as provider %}Vous allez vous connecter avec votre compte {{ provider }}.{% endblocktrans %}</p>
+
+  {% endif %}
+
+  <form method="post" class="mt-6">
+
+    {% csrf_token %}
+
+    <button type="submit" class="w-full bg-white border border-gray-300 text-gray-800 py-2.5 px-4 rounded-lg shadow-sm hover:bg-gray-50 transition flex items-center justify-center gap-3 font-medium">
+
+      <span class="material-symbols-outlined text-red-500">login</span>
+
+      {% trans "Continuer avec Google" %}
+
+    </button>
+
+  </form>
+
+</div>
+
+{% endblock content %}
+
+

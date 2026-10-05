@@ -1,0 +1,28 @@
+# Secrets — NE JAMAIS commiter
+.env
+
+# Base de données locale
+db.sqlite3
+db.sqlite3-journal
+
+# Environnement virtuel
+env/
+venv/
+
+# Médias uploadés par les utilisateurs
+media/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Django
+staticfiles/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

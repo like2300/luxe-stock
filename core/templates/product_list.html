@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block page_title %}Produits - Luxe{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Produits</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Liste des Produits</h1>
+        <p class="text-slate-500">Gérez vos produits et leur stock.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        {% if sp.can_view_products %}
+        <a href="{% url 'scan' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-primary/30 hover:text-primary transition-all">
+            <iconify-icon icon="solar:barcode-linear" width="18"></iconify-icon>
+            <span>Scanner</span>
+        </a>
+        {% endif %}
+        {% if sp.can_add_products %}
+        <a href="{% url 'product_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+            <iconify-icon icon="solar:add-circle-linear" width="18"></iconify-icon>
+            <span>Ajouter un Produit</span>
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <div class="p-6 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <form method="get" class="flex flex-col sm:flex-row gap-4 w-full sm:items-center">
+            <div class="relative w-full sm:w-64">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="q" value="{{ q }}" placeholder="Rechercher un produit..." data-suggest-url="{% url 'suggest_products' %}" class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
+            </div>
+            <button type="submit" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:opacity-90 transition-opacity shrink-0">
+                <iconify-icon icon="solar:magnifier-linear" width="16"></iconify-icon>
+                <span>Rechercher</span>
+            </button>
+            <div class="relative w-full sm:w-48">
+                <select name="category" onchange="this.form.submit()" class="pl-3 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors bg-white w-full">
+                    <option value="" {% if not cat %}selected{% endif %}>Toutes catégories</option>
+                    {% for c in categories %}
+                    <option value="{{ c.pk }}" {% if cat|stringformat:"s" == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+                <iconify-icon icon="solar:arrow-down-linear" class="absolute right-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+            </div>
+            <label class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" name="low" value="1" {% if low %}checked{% endif %} onchange="this.form.submit()" class="h-4 w-4 text-primary focus:ring-primary border-slate-300 rounded">
+                <span>Stock bas</span>
+            </label>
+            {% if q or cat or low %}
+            <a href="{% url 'product_list' %}" class="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-rose-500 transition-colors" title="Effacer les filtres">
+                <iconify-icon icon="solar:close-circle-linear" width="16"></iconify-icon>
+                <span>Réinitialiser</span>
+            </a>
+            {% endif %}
+        </form>
+        <form method="get" class="flex gap-2 shrink-0">
+            <input type="hidden" name="q" value="{{ q }}">
+            <input type="hidden" name="category" value="{{ cat }}">
+            {% if low %}<input type="hidden" name="low" value="1">{% endif %}
+            <select name="per" onchange="this.form.submit()" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-primary/50 transition-colors">
+                <option value="10" {% if per == 10 %}selected{% endif %}>10</option>
+                <option value="25" {% if per == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if per == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if per == 100 %}selected{% endif %}>100</option>
+            </select>
+        </form>
+    </div>
+
+            <div class="p-4 border-b border-slate-50 flex items-center justify-between">
+            <button type="submit" form="bulk" class="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm hover:bg-rose-700" onclick="return confirm('Supprimer les produits sélectionnés ?')">Supprimer sélectionnés</button>
+        </div>
+
+        <form method="post" id="bulk">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_selected">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                    <tr>
+                        <th class="px-6 py-4 w-6">
+                            <input type="checkbox" id="check-all" class="h-4 w-4 text-primary focus:ring-primary border-slate-300 rounded">
+                        </th>
+                        <th class="px-6 py-4">Référence</th>
+                        <th class="px-6 py-4">Produit</th>
+                        <th class="px-6 py-4">Catégorie</th>
+                        <th class="px-6 py-4">Prix d'achat</th>
+                        <th class="px-6 py-4">Prix de vente</th>
+                        <th class="px-6 py-4">Stock</th>
+                        <th class="px-6 py-4">Statut</th>
+                        <th class="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in page %}
+                    <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                        <td class="px-6 py-4 w-6">
+                            <input type="checkbox" name="ids" value="{{ p.pk }}" class="h-4 w-4 text-primary focus:ring-primary border-slate-300 rounded row-check">
+                        </td>
+                        <td class="px-6 py-4">{{ p.sku }}</td>
+                        <td class="px-6 py-4">{{ p.name }}</td>
+                        <td class="px-6 py-4">{{ p.category.name|default:"--" }}</td>
+                        <td class="px-6 py-4">{{ p.cost_price|floatformat:0 }} {{ shop.currency }}</td>
+                        <td class="px-6 py-4">{{ p.sale_price|floatformat:0 }} {{ shop.currency }}</td>
+                        <td class="px-6 py-4">{{ p.quantity }}</td>
+                        <td class="px-6 py-4">
+                            {% if p.quantity <= 0 %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">Rupture</span>
+                            {% elif p.is_low %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">Stock bas</span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">En stock</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex gap-2 justify-end">
+                                {% if sp.can_manage_stock %}
+                                <a href="{% url 'movement_create' %}?product={{ p.pk }}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Mouvement de stock">
+                                    <iconify-icon icon="solar:transfer-horizontal-linear" width="18"></iconify-icon>
+                                </a>
+                                {% endif %}
+                                {% if sp.can_edit_products %}
+                                <a href="{% url 'product_edit' p.pk %}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Modifier">
+                                    <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                                </a>
+                                {% endif %}
+                                {% if sp.can_delete_products %}
+                                <button type="submit" formaction="{% url 'product_delete' p.pk %}" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" onclick="return confirm('Supprimer ce produit ?')" title="Supprimer">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="px-6 py-4 text-center text-slate-400">Aucun produit trouvé.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </form>
+
+    <!-- Pagination -->
+    <div class="px-6 py-4 border-t border-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <p class="text-xs text-slate-500">Affichage {{ page.start_index }} à {{ page.end_index }} sur {{ page.paginator.count }} résultats</p>
+        <div class="flex gap-2">
+            {% if page.has_previous %}
+            <a href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.previous_page_number }}" class="px-3 py-1 rounded-md border border-slate-200 text-slate-500 hover:border-primary hover:text-primary text-xs transition-colors">Précédent</a>
+            {% endif %}
+            {% for n in page.paginator.page_range %}
+            <a href="?{% if qs %}{{ qs }}&{% endif %}page={{ n }}" class="px-3 py-1 rounded-md {% if n == page.number %}bg-primary text-white{% else %}border border-slate-200 text-slate-500 hover:border-primary hover:text-primary{% endif %} text-xs transition-colors">{{ n }}</a>
+            {% endfor %}
+            {% if page.has_next %}
+            <a href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.next_page_number }}" class="px-3 py-1 rounded-md border border-slate-200 text-slate-500 hover:border-primary hover:text-primary text-xs transition-colors">Suivant</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Script pour gérer la sélection multiple -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkAll = document.getElementById('check-all');
+    const rowChecks = document.querySelectorAll('.row-check');
+
+    if (checkAll) {
+        checkAll.addEventListener('change', function() {
+            rowChecks.forEach(check => {
+                check.checked = this.checked;
+            });
+        });
+    }
+
+    // La suppression d'une ligne a déjà sa propre confirmation.
+    document.getElementById('bulk').addEventListener('submit', function(e) {
+        if (e.submitter && e.submitter.hasAttribute('formaction')) {
+            return;
+        }
+        if (!confirm('Êtes-vous sûr de vouloir supprimer les produits sélectionnés ?')) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
+{% endblock %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const checkAll = document.getElementById('check-all');
+  if (checkAll) {
+    checkAll.addEventListener('change', function() {
+      document.querySelectorAll('.row-check').forEach(cb => {
+        cb.checked = checkAll.checked;
+      });
+    });
+  }
+});
+</script>

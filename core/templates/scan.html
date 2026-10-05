@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}Scanner - Luxe{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Scanner</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Scanner de codes-barres</h1>
+        <p class="text-slate-500">Scannez un produit avec le lecteur USB ou la caméra.</p>
+    </div>
+    <a href="{% url 'product_list' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-primary/30 hover:text-primary transition-all self-start md:self-auto">
+        <iconify-icon icon="solar:arrow-left-linear" width="16"></iconify-icon>
+        <span>Retour à la liste</span>
+    </a>
+</div>
+
+<div id="scan-app"
+     data-lookup-url="{% url 'scan_api' %}"
+     {% if can_manage %}data-post-url="{% url 'scan_movement_api' %}"{% endif %}
+     data-create-url="{% url 'product_create' %}"
+     data-edit-url="{% url 'product_edit' 0 %}"
+     data-mode="{% if can_manage %}{{ request.GET.mode|default:'OUT' }}{% else %}CARD{% endif %}"
+     data-can-manage="{% if can_manage %}1{% else %}0{% endif %}"
+     data-can-add="{% if can_add %}1{% else %}0{% endif %}"
+     data-can-edit="{% if can_edit %}1{% else %}0{% endif %}"
+     class="space-y-6">
+
+    <!-- Modes -->
+    <div class="flex flex-col sm:flex-row gap-3" role="group" aria-label="Mode de scan">
+        {% if can_manage %}
+        <button type="button" data-mode-btn="OUT" aria-pressed="false"
+                class="flex-1 px-3 py-3 rounded-xl text-sm font-semibold border-2 border-slate-200 bg-white text-slate-500 hover:border-primary/40 hover:text-primary transition-all duration-200">
+            Sortie (vente)
+        </button>
+        <button type="button" data-mode-btn="IN" aria-pressed="false"
+                class="flex-1 px-3 py-3 rounded-xl text-sm font-semibold border-2 border-slate-200 bg-white text-slate-500 hover:border-primary/40 hover:text-primary transition-all duration-200">
+            Entrée (réception)
+        </button>
+        {% endif %}
+        <button type="button" data-mode-btn="CARD" aria-pressed="false"
+                class="flex-1 px-3 py-3 rounded-xl text-sm font-semibold border-2 border-slate-200 bg-white text-slate-500 hover:border-primary/40 hover:text-primary transition-all duration-200">
+            Fiche produit
+        </button>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-6">
+        <!-- Colonne scan -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-6 space-y-4">
+                <div>
+                    <label for="scan-input" class="block text-sm font-medium text-slate-700 mb-1.5">
+                        <span id="scan-mode-title" class="font-semibold">Sortie de stock (vente)</span>
+                    </label>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <div class="relative flex-1">
+                            <iconify-icon icon="solar:barcode-linear" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="20"></iconify-icon>
+                            <input id="scan-input" type="text" inputmode="none" autocomplete="off" autofocus
+                                   placeholder="Scannez un code-barres…"
+                                   class="w-full pl-11 pr-4 py-4 text-lg rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all">
+                        </div>
+                        <button type="button" id="scan-camera-btn"
+                                class="px-4 py-4 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:border-primary/40 hover:text-primary transition-all flex items-center justify-center gap-2 shrink-0">
+                            <iconify-icon icon="solar:video-camera-bold-duotone" width="20"></iconify-icon>
+                            <span>Utiliser la caméra</span>
+                        </button>
+                    </div>
+                    <p class="mt-2 text-xs text-slate-400">
+                        Le lecteur USB tape le code puis valide automatiquement — la zone reste active.
+                    </p>
+                </div>
+
+                <div id="scan-camera" class="hidden rounded-xl overflow-hidden border border-slate-200 bg-slate-900">
+                    <video id="scan-camera-video" class="w-full h-64 object-cover" muted playsinline></video>
+                    <div id="scan-camera-region" class="p-3 bg-slate-900 text-center text-xs text-slate-300"></div>
+                    <div class="p-3 bg-slate-900">
+                        <button type="button" id="scan-camera-stop"
+                                class="px-4 py-2 rounded-lg border border-slate-600 text-sm text-slate-200 hover:bg-slate-800 transition-colors">
+                            Arrêter la caméra
+                        </button>
+                    </div>
+                </div>
+
+                <div id="scan-status" role="status" aria-live="polite"
+                     class="hidden px-4 py-2.5 rounded-xl text-sm font-medium"></div>
+
+                <div id="scan-create-box" class="hidden flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-xl bg-orange-50 border border-orange-100">
+                    <p class="text-sm text-orange-700 flex-1">Aucun produit ne porte ce code dans cette boutique.</p>
+                    {% if can_add %}
+                    <a id="scan-create-link" href="{% url 'product_create' %}"
+                       class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all text-center">
+                        Créer ce produit
+                    </a>
+                    {% endif %}
+                </div>
+
+                {% if can_manage %}
+                <div data-mode-only="IN OUT">
+                    <label for="scan-note" class="block text-sm font-medium text-slate-700 mb-1.5">Note (facultatif)</label>
+                    <input id="scan-note" type="text" maxlength="200" placeholder="Ex. livraison fournisseur"
+                           class="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Lignes scannées -->
+            <div data-mode-only="IN OUT" class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+                <div class="p-5 border-b border-slate-50 flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="font-semibold text-slate-700">Produits scannés</h2>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="scan-clear"
+                                class="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                            Vider la liste
+                        </button>
+                        <button type="button" id="scan-reset"
+                                class="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                            Réinitialiser
+                        </button>
+                    </div>
+                </div>
+                <p id="scan-empty" class="px-5 py-10 text-center text-sm text-slate-400">
+                    Aucun produit scanné pour l'instant.
+                </p>
+                <ul id="scan-lines" class="divide-y divide-slate-50"></ul>
+                <div class="p-5 border-t border-slate-50 flex justify-end">
+                    <button type="button" id="scan-validate" disabled
+                            class="w-full sm:w-auto px-6 py-3 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none">
+                        Valider
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Colonne fiche -->
+        <div class="space-y-6">
+            <div id="scan-card" class="hidden bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-6"></div>
+            <a id="scan-card-edit" href="#" class="hidden px-5 py-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:border-primary/30 hover:text-primary transition-all text-center">
+                Modifier ce produit
+            </a>
+
+            <div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-6">
+                <h2 class="font-semibold text-slate-700 mb-3">Aide</h2>
+                <ul class="space-y-2 text-sm text-slate-500">
+                    <li>Un même produit scanné deux fois ajoute 1 à sa quantité.</li>
+                    <li>Entrée : réception fournisseur. Sortie : vente.</li>
+                    {% if can_manage %}
+                    <li>Le stock ne change qu'après « Valider ».</li>
+                    <li>Un lot est enregistré en une seule fois : si une ligne est refusée, rien n'est enregistré.</li>
+                    {% endif %}
+                    <li>Le son de chaque scan est coupé par l'interrupteur en haut de l'écran.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'core/js/scan.js' %}" defer></script>
+{% endblock %}

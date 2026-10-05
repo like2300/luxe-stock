@@ -1,0 +1,50 @@
+{% extends "account/base_entrance.html" %}
+{% load i18n %}
+{% load allauth account socialaccount %}
+{% block head_title %}{% trans "Sign In" %}{% endblock head_title %}
+{% block content %}
+<div class="max-w-md mx-auto mt-10 p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+  <h1 class="text-2xl font-bold mb-6 text-center flex items-center justify-center gap-2">
+    <span class="material-symbols-outlined text-blue-600">login</span>
+    Connexion
+  </h1>
+  {% url 'account_login' as login_url %}
+  <form method="post" action="{{ login_url }}" class="space-y-4">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form.visible_fields %}
+      <div>
+        <label class="block text-sm font-medium mb-1">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="text-red-600 text-sm">{{ field.errors }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    {% if redirect_field_value %}
+      <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+    {% endif %}
+    <button type="submit" class="w-full bg-blue-600 text-white py-2.5 px-4 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 font-medium">
+      <span class="material-symbols-outlined">login</span>
+      Se connecter
+    </button>
+  </form>
+  <div class="my-6 flex items-center">
+    <div class="flex-1 h-px bg-gray-200"></div>
+    <span class="px-3 text-sm text-gray-500">ou</span>
+    <div class="flex-1 h-px bg-gray-200"></div>
+  </div>
+  <div>
+    {% include "socialaccount/snippets/provider_list.html" with process="login" %}
+  </div>
+  <div class="text-center mt-6 text-sm flex items-center justify-center gap-3 flex-wrap">
+    <a href="{% url 'account_signup' %}" class="text-blue-600 hover:underline flex items-center gap-1">
+      <span class="material-symbols-outlined text-base">person_add</span>
+      Créer un compte
+    </a>
+    <span class="text-gray-300">|</span>
+    <a href="{% url 'account_reset_password' %}" class="text-blue-600 hover:underline flex items-center gap-1">
+      <span class="material-symbols-outlined text-base">lock_reset</span>
+      Mot de passe oublié ?
+    </a>
+  </div>
+</div>
+{% endblock content %}

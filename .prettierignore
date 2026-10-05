@@ -1,0 +1,6 @@
+# Les gabarits Django ne supportent pas le reformatage HTML :
+# Prettier coupe les balises {% ... %} / {{ ... }} sur plusieurs lignes,
+# ce qui provoque des TemplateSyntaxError.
+core/templates/
+templates/
+*.html

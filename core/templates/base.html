@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block page_title %}Luxe Dashboard{% endblock %}</title>
+
+    <!-- Fonts: Montserrat (Sans) & Playfair Display (Serif) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Iconify -->
+    <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Font Awesome pour les icônes -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+<script>
+tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '{{ shop.primary_color|default:"#5802f7" }}',
+                        secondary: '#f3f0ff',
+                        dark: '#1a1a1a',
+                        pastelBlue: '#eef2ff',
+                        pastelPurple: '#f5f3ff',
+                    },
+                    fontFamily: {
+                        sans: ['Montserrat', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        :root {
+            --primary:{{ shop.primary_color|default:"#5802f7" }};
+            --shop-primary: {{ shop.primary_color|default:"#5802f7" }};
+            --shop-sidebar: {{ shop.sidebar_color|default:"#ffffff" }};
+            --shop-header: {{ shop.header_color|default:"#4a5868" }};
+            --shop-bg: {{ shop.background_color|default:"#f8fafc" }};
+        }
+        body.shop-themed { background-color: var(--shop-bg); }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Glassmorphism Utilities */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .sidebar-transition {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Chart Tooltip Customization */
+        #chartjs-tooltip {
+            opacity: 1;
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            color: black;
+            border-radius: 8px;
+            pointer-events: none;
+            transform: translate(-50%, 0);
+            transition: all .1s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+        }
+
+        /* Interrupteur Son : libellé à gauche, état ON/OFF à droite, icône dans la bulle */
+        .sound-switch { position: relative; width: 62px; height: 28px; border-radius: 9999px; background: #cbd5e1; transition: background .2s; cursor: pointer; border: none; padding: 0; flex-shrink: 0; }
+        .sound-knob { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 9999px; background: #fff; color: #64748b; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: left .2s, color .2s; display: inline-flex; align-items: center; justify-content: center; }
+        .sound-switch.on { background: var(--shop-primary); }
+        .sound-switch.on .sound-knob { left: 36px; color: var(--shop-primary); }
+
+        /* Suggestions automatiques de recherche */
+        .suggest-box { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 12px 32px -8px rgba(0,0,0,.18); overflow: hidden; max-height: 260px; overflow-y: auto; }
+        .suggest-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 9px 14px; font-size: 13px; color: #1e293b; background: #fff; border: none; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
+        .suggest-item:last-child { border-bottom: none; }
+        .suggest-item:hover, .suggest-item.active { background: #f5f3ff; }
+        .suggest-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .suggest-sub { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-600 font-sans antialiased overflow-x-hidden shop-themed">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" style="background-color: var(--shop-sidebar);" class="sidebar-transition fixed inset-y-0 left-0 z-50 w-64 backdrop-blur-xl border-r border-slate-100 transform -translate-x-full md:relative md:translate-x-0 flex flex-col justify-between shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+            <!-- Logo Area -->
+            <div class="h-20 flex items-center px-8 border-b border-slate-50/50">
+                <div class="flex items-center gap-3">
+                    {% if shop.logo %}
+                    <img src="{{ shop.logo.url }}" alt="Logo {{ shop.name }}" class="w-10 h-10 rounded-xl object-cover shadow-lg">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg" style="background-color: var(--shop-primary);">
+                        <span>{{ shop.initials|default:"L" }}</span>
+                    </div>
+                    {% endif %}
+                    <span class="text-dark text-lg font-extrabold tracking-tight font-poppins truncate max-w-[140px]">{{ shop.name|default:"Luxe" }}</span>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+                <p class="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Tableau de bord</p>
+
+                <a href="{% url 'dashboard' %}" class="group flex items-center gap-3 {% if request.resolver_match.url_name == 'dashboard' %}text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200 rounded-xl px-4 py-3">
+                    <iconify-icon icon="solar:widget-5-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Tableau de bord</span>
+                </a>
+
+                                {% if request.membership.can_add_products %}
+                <a href="{% url 'product_create' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'product_create' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200">
+                    <iconify-icon icon="solar:add-circle-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Ajouter un produit</span>
+                </a>
+                {% endif %}
+                <a class="group flex items-center gap-3 {% if request.resolver_match.url_name == 'product_list' or request.resolver_match.url_name == 'product_create' or request.resolver_match.url_name == 'product_edit' %}text-primary font-medium bg-slate-50{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200 rounded-xl px-4 py-3" href="{% url 'product_list' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name in 'product_list product_create product_edit' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200">
+                    <iconify-icon icon="solar:box-minimalistic-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Produits</span>
+                </a>
+
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'movement_list' or request.resolver_match.url_name == 'movement_create' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'movement_list' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-primary transition-all duration-200">
+                    <iconify-icon icon="solar:transfer-horizontal-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Mouvements</span>
+                </a>
+
+                {% if sp.can_view_products %}
+                <a href="{% url 'scan' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'scan' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200">
+                    <iconify-icon icon="solar:barcode-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Scanner</span>
+                </a>
+                {% endif %}
+
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'category_list' or request.resolver_match.url_name == 'category_create' or request.resolver_match.url_name == 'category_edit' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'category_list' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-primary transition-all duration-200">
+                    <iconify-icon icon="solar:tag-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Catégories</span>
+                </a>
+
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'employee_list' or request.resolver_match.url_name == 'employee_create' or request.resolver_match.url_name == 'employee_edit' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'employee_list' %}" class="group flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-primary transition-all duration-200">
+                    <iconify-icon icon="solar:users-group-rounded-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Employés</span>
+                </a>
+
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'notification_list' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'notification_list' %}">
+                    <iconify-icon icon="solar:bell-bing-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <div class="flex-1 flex justify-between items-center">
+                        <span>Notifications</span>
+                        {% if unread_count %}<span class="bg-rose-100 text-rose-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{{ unread_count }}</span>{% endif %}
+                    </div>
+                </a>
+            </nav>
+
+            <!-- Bottom Actions -->
+            <div class="p-4 border-t border-slate-50">
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'settings' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'settings' %}" class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-primary transition-all duration-200">
+                    <iconify-icon icon="solar:settings-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Paramètres</span>
+                </a>
+                <a href="{% url 'logout' %}" class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-rose-500 transition-all duration-200 mt-1">
+                    <iconify-icon icon="solar:logout-2-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Déconnexion</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Overlay for Mobile -->
+        <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-dark/20 backdrop-blur-sm z-40 hidden md:hidden transition-opacity opacity-0"></div>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col relative overflow-y-auto overflow-x-hidden scroll-smooth">
+            <!-- Header -->
+            <header class="sticky flex glass md:px-10 md:pt-3 md:pb-3 h-20 z-30 pt-3 pr-6 pb-3 pl-6 top-0 items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <button onclick="toggleSidebar()" class="md:hidden text-slate-500 hover:text-primary transition-colors p-1">
+                        <iconify-icon icon="solar:hamburger-menu-linear" width="24" stroke-width="1.5"></iconify-icon>
+                    </button>
+                    <!-- Breadcrumbs -->
+                    <nav class="hidden sm:flex items-center text-sm font-medium text-slate-400">
+                        {% block breadcrumbs %}{% endblock %}
+                    </nav>
+                </div>
+
+                <div class="flex items-center gap-4 md:gap-6">
+                    <!-- Search -->
+                    <div class="hidden md:flex focus-within:border-primary/20 focus-within:bg-white focus-within:shadow-sm transition-all duration-300 bg-slate-100/50 w-64 border-transparent border rounded-full pt-2 pr-4 pb-2 pl-4 items-center">
+                        <iconify-icon icon="solar:magnifier-linear" class="text-slate-400 mr-2" width="18"></iconify-icon>
+                        <form method="get" action="{% url 'product_list' %}" class="w-full min-w-0">
+                            <input type="text" id="header-search" name="q" placeholder="Rechercher un produit..." data-suggest-url="{% url 'suggest_products' %}" value="{{ q|default:'' }}" class="bg-transparent border-none outline-none text-sm text-slate-600 w-full placeholder-slate-400" autocomplete="off">
+                        </form>
+                    </div>
+
+                    <!-- Interrupteur Son (par PC : localStorage) -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-medium text-slate-400 whitespace-nowrap">Son</span>
+                        <button type="button" id="sound-toggle" class="sound-switch" aria-pressed="true" title="Activer / couper le son (ce PC uniquement)" aria-label="Activer ou couper le son">
+                            <span class="sound-knob">
+                                <iconify-icon id="sound-knob-icon" icon="solar:volume-loud-linear" width="13"></iconify-icon>
+                            </span>
+                        </button>
+                        <span id="sound-state" class="text-[10px] font-semibold w-7 text-right text-emerald-500">ON</span>
+                    </div>
+
+                    <!-- Icons -->
+                    <a href="{% url 'notification_list' %}" class="relative text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-secondary">
+                        <iconify-icon icon="solar:bell-linear" width="22" stroke-width="1.5"></iconify-icon>
+                        <span class="absolute top-1.5 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                    </a>
+
+                    <!-- Profile Dropdown : photo ou initiales + popup profil -->
+                    <button type="button" id="profile-trigger" data-url="{% url 'profile_api' %}" data-upload-url="{% url 'profile_api_update' %}" data-photo-delete-url="{% url 'profile_photo_delete' %}" class="flex items-center gap-3 pl-4 border-l border-slate-200 cursor-pointer group text-left">
+                        <div class="text-right hidden md:block">
+                            <p class="text-sm font-semibold text-dark group-hover:text-primary transition-colors">
+                                {% if request.user.first_name %}{% if request.user.last_name %}
+                                    {{ request.user.first_name }} {{ request.user.last_name }}
+                                {% else %}
+                                    {{ request.user.first_name }}
+                                {% endif %}
+                                {% else %}
+                                    {{ request.user.username }}
+                                {% endif %}
+                            </p>
+                            <p class="text-xs text-slate-400" id="header-role">
+                                {% if request.membership.is_owner %}Propriétaire{% else %}Employé{% endif %}
+                            </p>
+                        </div>
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-tr {{ avatar_gradient }} p-[2px] shrink-0">
+                            <div class="w-full h-full rounded-full bg-white border-2 border-white overflow-hidden flex items-center justify-center">
+                                {% if avatar_photo %}
+                                    <img src="{{ avatar_photo }}" alt="Photo de profil" class="w-full h-full object-cover">
+                                {% else %}
+                                    <span class="w-full h-full flex items-center justify-center text-white font-semibold text-sm">{{ avatar_initials }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Container -->
+            <div class="md:p-10 w-full max-w-7xl mr-auto ml-auto pt-6 pr-6 pb-6 pl-6 space-y-8">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+<!-- Popup profil de l'utilisateur connecté -->
+<div id="profile-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-dark/40 backdrop-blur-sm" data-profile-close></div>
+    <div class="relative min-h-full flex items-center justify-center p-4">
+        <div class="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="profile-name">
+            <div class="h-24 bg-gradient-to-tr {{ avatar_gradient }}"></div>
+            <button type="button" data-profile-close class="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/40 text-white transition-colors flex items-center justify-center">
+                <iconify-icon icon="solar:close-circle-linear" width="22"></iconify-icon>
+            </button>
+
+            <div class="px-8 pb-8 -mt-12">
+                <div id="profile-avatar" class="w-24 h-24 rounded-full border-4 border-white overflow-hidden bg-gradient-to-tr {{ avatar_gradient }} shadow-lg flex items-center justify-center">
+                    {% if avatar_photo %}
+                        <img src="{{ avatar_photo }}" alt="Photo de profil" class="w-full h-full object-cover">
+                    {% else %}
+                        <span class="w-full h-full flex items-center justify-center text-white font-semibold text-2xl">{{ avatar_initials }}</span>
+                    {% endif %}
+                </div>
+
+                <h2 id="profile-name" class="text-xl font-bold text-dark font-poppins mt-3">
+                    {{ request.user.get_full_name|default:request.user.username }}
+                </h2>
+                <p id="profile-role" class="text-sm text-primary font-medium">
+                    {% if request.membership.is_owner %}Propriétaire{% else %}Employé{% endif %}
+                    {% if shop %} · {{ shop.name }}{% endif %}
+                </p>
+
+                <div id="profile-message" class="hidden mt-4 text-sm rounded-lg px-4 py-2"></div>
+
+                <form id="profile-form" class="mt-6 space-y-4" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div>
+                        <label for="profile-email" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Email</label>
+                        <input id="profile-email" type="email" disabled class="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-500">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="profile-phone" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Téléphone</label>
+                            <input id="profile-phone" name="phone" maxlength="40" placeholder="Optionnel" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        <div>
+                            <label for="profile-bio" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Bio</label>
+                            <input id="profile-bio" name="bio" maxlength="200" placeholder="Optionnel" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="profile-photo" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Photo de profil</label>
+                        <input id="profile-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-secondary file:text-primary file:text-sm file:font-medium hover:file:bg-primary hover:file:text-white transition-colors">
+                        <p class="mt-1 text-xs text-slate-400">JPEG, PNG, WebP ou GIF — 2 Mo maximum. Sans photo, vos initiales sont affichées.</p>
+                    </div>
+                    <div class="flex flex-wrap justify-between gap-3 pt-2">
+                        <button type="button" id="profile-photo-delete" class="px-4 py-2.5 rounded-lg border border-rose-200 text-rose-600 text-sm font-medium hover:bg-rose-50 transition-all">
+                            Retirer la photo
+                        </button>
+                        <div class="flex gap-3 ml-auto">
+                            <button type="button" data-profile-close class="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">Fermer</button>
+                            <button type="submit" class="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all">Enregistrer</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Membre depuis</p>
+                        <p id="profile-joined" class="text-slate-600">—</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Dernière connexion</p>
+                        <p id="profile-last-login" class="text-slate-600">—</p>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Permissions</p>
+                        <div id="profile-permissions" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+
+                <a href="{% url 'logout' %}" class="mt-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 transition-all">
+                    <iconify-icon icon="solar:logout-2-linear" width="18"></iconify-icon>
+                    Se déconnecter
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+    {% load static %}
+    <script src="{% static 'js/suggest.js' %}"></script>
+    {% block scripts %}{% endblock %}
+    <script>
+        // --- Sidebar Logic ---
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+
+        function toggleSidebar() {
+            if (!sidebar || !overlay) return;
+            const isClosed = sidebar.classList.contains('-translate-x-full');
+
+            if (isClosed) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                setTimeout(() => {
+                    overlay.classList.remove('opacity-0');
+                }, 10);
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        // --- Son ON/OFF par PC (localStorage : chaque PC garde son réglage) ---
+        const SOUND_KEY = 'stockpro_sound_enabled';
+        function isSoundEnabled() {
+            const v = localStorage.getItem(SOUND_KEY);
+            return v === null ? true : v === '1'; // activé par défaut
+        }
+        function applySoundToggle() {
+            const btn = document.getElementById('sound-toggle');
+            if (!btn) return;
+            const on = isSoundEnabled();
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            btn.title = on ? 'Son activé (ce PC) — cliquer pour couper' : 'Son coupé (ce PC) — cliquer pour activer';
+            const state = document.getElementById('sound-state');
+            if (state) {
+                state.textContent = on ? 'ON' : 'OFF';
+                state.className = 'text-[10px] font-semibold w-7 text-right '
+                    + (on ? 'text-emerald-500' : 'text-slate-400');
+            }
+            const knob = document.getElementById('sound-knob-icon');
+            if (knob) knob.setAttribute('icon', on ? 'solar:volume-loud-linear' : 'solar:volume-none-linear');
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            applySoundToggle();
+            const btn = document.getElementById('sound-toggle');
+            if (btn) btn.addEventListener('click', function() {
+                localStorage.setItem(SOUND_KEY, isSoundEnabled() ? '0' : '1');
+                applySoundToggle();
+                // Petit bip de confirmation quand le son vient d'être réactivé.
+                if (isSoundEnabled() && typeof window.previewUiSound === 'function') {
+                    window.previewUiSound();
+                }
+            });
+            window.StockSound = { isEnabled: isSoundEnabled };
+        });
+
+// --- Charts Configuration ---
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Chart === 'undefined') return;
+            Chart.defaults.font.family = "'Montserrat', sans-serif";
+            Chart.defaults.color = '#94a3b8';
+            Chart.defaults.scale.grid.color = '#f1f5f9';
+            Chart.defaults.scale.border.color = 'transparent';
+        });
+
+        // --- Popup profil (API /api/profil/) ---
+        (function() {
+            const trigger = document.getElementById('profile-trigger');
+            const modal = document.getElementById('profile-modal');
+            if (!trigger || !modal) return;
+
+            const form = document.getElementById('profile-form');
+            const avatarBox = document.getElementById('profile-avatar');
+            const messageBox = document.getElementById('profile-message');
+            const photoInput = document.getElementById('profile-photo');
+            const photoDelete = document.getElementById('profile-photo-delete');
+            const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+            // L'avatar de l'en-tete est partage avec le popup : meme rendu dans les deux.
+            const headerAvatar = trigger.querySelector('.rounded-full.bg-gradient-to-tr');
+            const GRADIENTS = ['from-primary to-indigo-400', 'from-rose-500 to-orange-400',
+                'from-emerald-500 to-teal-400', 'from-sky-500 to-indigo-400',
+                'from-amber-500 to-rose-400', 'from-violet-500 to-fuchsia-400'];
+
+            function avatarHtml(data) {
+                if (data.url) {
+                    return '<img src="' + data.url + '" alt="Photo de profil" class="w-full h-full object-cover">';
+                }
+                return '<span class="w-full h-full flex items-center justify-center text-white font-semibold text-sm">' + data.initials + '</span>';
+            }
+
+            function paintAvatar(data) {
+                const gradient = data.gradient || GRADIENTS[0];
+                [avatarBox, headerAvatar].forEach(function(box) {
+                    if (!box) return;
+                    box.className = box.className.replace(/from-\S+ to-\S+/, gradient);
+                });
+                if (avatarBox) avatarBox.innerHTML = avatarHtml(data);
+                const headerInner = headerAvatar && headerAvatar.firstElementChild;
+                if (headerInner) headerInner.innerHTML = avatarHtml(data);
+            }
+
+            function formatDate(value) {
+                if (!value) return '—';
+                const d = new Date(value);
+                return isNaN(d) ? '—' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+            }
+
+            function showMessage(text, tone) {
+                if (!messageBox) return;
+                if (!text) { messageBox.classList.add('hidden'); return; }
+                const tones = {
+                    ok: 'bg-emerald-50 text-emerald-700',
+                    ko: 'bg-rose-50 text-rose-700',
+                };
+                messageBox.className = 'mt-4 text-sm rounded-lg px-4 py-2 ' + (tones[tone] || tones.ok);
+                messageBox.textContent = text;
+            }
+
+            function fill(data) {
+                document.getElementById('profile-name').textContent = data.full_name || data.username;
+                document.getElementById('profile-role').textContent =
+                    [data.role, data.shop_name].filter(Boolean).join(' · ');
+                document.getElementById('profile-email').value = data.email || 'Non renseigné';
+                document.getElementById('profile-phone').value = data.phone || '';
+                document.getElementById('profile-bio').value = data.bio || '';
+                document.getElementById('profile-joined').textContent = formatDate(data.date_joined);
+                document.getElementById('profile-last-login').textContent = formatDate(data.last_login);
+                const headerRole = document.getElementById('header-role');
+                if (headerRole) headerRole.textContent = data.role || '';
+                paintAvatar(data.avatar || { initials: '?', gradient: GRADIENTS[0] });
+
+                const box = document.getElementById('profile-permissions');
+                box.innerHTML = '';
+                (data.permissions || []).forEach(function(label) {
+                    const chip = document.createElement('span');
+                    chip.className = 'px-2.5 py-1 rounded-full text-xs font-medium bg-secondary text-primary';
+                    chip.textContent = label;
+                    box.appendChild(chip);
+                });
+                if (photoDelete) photoDelete.classList.toggle('hidden', !data.has_uploaded_photo);
+            }
+
+            function post(url, body) {
+                return fetch(url, {
+                    method: 'POST',
+                    body: body,
+                    headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); });
+            }
+
+            function open() {
+                modal.classList.remove('hidden');
+                showMessage('', 'ok');
+                fetch(trigger.dataset.url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function(r) { return r.json(); })
+                    .then(fill)
+                    .catch(function() { showMessage('Impossible de charger le profil.', 'ko'); });
+            }
+
+            function close() { modal.classList.add('hidden'); }
+
+            trigger.addEventListener('click', open);
+            modal.querySelectorAll('[data-profile-close]').forEach(function(el) {
+                el.addEventListener('click', close);
+            });
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && !modal.classList.contains('hidden')) close();
+            });
+
+            // Aperçu immediate du fichier choisi avant l'envoi.
+            if (photoInput) photoInput.addEventListener('change', function() {
+                const file = photoInput.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    paintAvatar({ url: e.target.result, initials: '?', gradient: GRADIENTS[0] });
+                };
+                reader.readAsDataURL(file);
+            });
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                post(trigger.dataset.uploadUrl, new FormData(form)).then(function(res) {
+                    if (!res.ok) {
+                        const errors = res.data.errors || {};
+                        const messages = [];
+                        for (const key in errors) {
+                            (Array.isArray(errors[key]) ? errors[key] : [errors[key]]).forEach(function(m) {
+                                messages.push(Array.isArray(m) ? m.join(' ') : m);
+                            });
+                        }
+                        showMessage(messages.join(' ') || 'Enregistrement impossible.', 'ko');
+                        return;
+                    }
+                    fill(res.data);
+                    form.reset();
+                    showMessage('Profil mis à jour.', 'ok');
+                });
+            });
+
+            if (photoDelete) photoDelete.addEventListener('click', function() {
+                post(trigger.dataset.photoDeleteUrl, new FormData()).then(function(res) {
+                    if (!res.ok) { showMessage('Suppression impossible.', 'ko'); return; }
+                    fill(res.data);
+                    showMessage('Photo retirée — vos initiales sont affichées.', 'ok');
+                });
+            });
+        })();
+    </script>
+</body>
+</html>
