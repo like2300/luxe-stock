@@ -1,164 +1,143 @@
-<!doctype html>
-<html lang="fr">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Connexion - Luxe Dashboard</title>
+{% extends "auth/base.html" %}
+{% block page_title %}Connexion — Stock{% endblock %}
+{% block form_title %}Connexion{% endblock %}
 
-        <!-- Fonts: Montserrat (Sans) & Playfair Display (Serif) -->
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-            rel="preconnect"
-            href="https://fonts.gstatic.com"
-            crossorigin
-        />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap"
-            rel="stylesheet"
-        />
+{% block content %}
+<form method="post" action="{% url 'login' %}" class="space-y-4">
+    {% csrf_token %}
 
-        <!-- Tailwind CSS -->
-        <script src="https://cdn.tailwindcss.com"></script>
+    {% if form.non_field_errors %}
+    <div class="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-100 px-3 py-2 text-xs text-rose-700">
+        <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
+        <div>{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>
+    </div>
+    {% endif %}
 
-        <!-- Iconify -->
-        <script src="https://cdn.jsdelivr.net/npm/iconify-icon@1.0.7/dist/iconify-icon.min.js"></script>
+    <div>
+        <label for="id_username" class="sr-only">Nom d'utilisateur</label>
+        <div class="relative border-b border-gray-200 focus-within:border-blue-600 transition-colors pb-1">
+            <input type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autocomplete="username" autofocus required
+                   class="w-full pr-8 py-1 text-sm text-gray-700 placeholder-gray-400 focus:outline-none bg-transparent" placeholder="Nom d'utilisateur">
+            <i class="fa-regular fa-user absolute right-1 top-2 text-gray-400 text-sm"></i>
+        </div>
+        {% if form.username.errors %}<p class="mt-1 text-xs text-rose-600">{{ form.username.errors.0 }}</p>{% endif %}
+    </div>
 
-        <script>
-            tailwind.config = {
-                theme: {
-                    extend: {
-                        colors: {
-                            primary: "#5802f7",
-                            dark: "#1a1a1a",
-                        },
-                        fontFamily: {
-                            sans: ["Montserrat", "sans-serif"],
-                            serif: ["Playfair Display", "serif"],
-                        },
-                    },
-                },
-            };
-        </script>
+    <div>
+        <label for="id_password" class="sr-only">Mot de passe</label>
+        <div class="relative border-b border-gray-200 focus-within:border-blue-600 transition-colors pb-1">
+            <input type="password" name="password" id="id_password" autocomplete="current-password" required
+                   class="w-full pr-8 py-1 text-sm text-gray-700 placeholder-gray-400 focus:outline-none bg-transparent" placeholder="Mot de passe">
+            <button type="button" data-toggle-password="id_password" aria-label="Afficher le mot de passe"
+                    class="absolute right-0 top-0 h-full px-2 text-gray-400 hover:text-gray-600">
+                <i class="fa-regular fa-eye text-sm"></i>
+            </button>
+        </div>
+        {% if form.password.errors %}<p class="mt-1 text-xs text-rose-600">{{ form.password.errors.0 }}</p>{% endif %}
+    </div>
 
-        <style>
-            .glass {
-                background: rgba(255, 255, 255, 0.7);
-                backdrop-filter: blur(12px);
-                -webkit-backdrop-filter: blur(12px);
-                border: 1px solid rgba(255, 255, 255, 0.5);
-            }
-        </style>
-    </head>
-    <body class="bg-slate-50 text-slate-600 font-sans antialiased">
-        <div
-            class="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100"
-        >
-            <div
-                class="w-full max-w-md p-8 space-y-8 glass rounded-2xl shadow-xl border border-slate-100"
-            >
-                <div class="text-center">
-                    <div class="flex justify-center mb-6">
-                        <div
-                            class="w-12 h-12 rounded-lg bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/30"
-                        >
-                            <span class="text-lg font-semibold font-poppins"
-                                >H</span
-                            >
-                        </div>
-                    </div>
-                    <h1 class="text-3xl font-bold text-dark font-poppins">
-                        Bienvenue sur Luxe
-                    </h1>
-                    <p class="text-slate-500 mt-2">
-                        Connectez-vous pour accéder à votre tableau de bord.
-                    </p>
-                </div>
+    <input type="hidden" name="next" value="{{ next }}">
+    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
 
-                <form method="post" action="{% url 'login' %}">
-                    {% csrf_token %}
+    <div class="flex items-center justify-between pt-2">
+        <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" name="remember" class="w-3.5 h-3.5 accent-blue-600">
+            Se souvenir de moi
+        </label>
+        <a href="{% url 'password_reset' %}" class="text-xs text-gray-500 hover:text-blue-600 transition-colors">Mot de passe oublié&nbsp;?</a>
+    </div>
 
-                    <div class="space-y-6">
-                        <div>
-                            <label
-                                for="username"
-                                class="block text-sm font-medium text-slate-700 mb-1"
-                                >Nom d'utilisateur</label
-                            >
-                            <input
-                                type="text"
-                                name="username"
-                                id="username"
-                                required
-                                class="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary transition-all bg-white/80"
-                            />
-                        </div>
+    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors shadow-sm">
+        Se connecter
+    </button>
 
-                        <div>
-                            <label
-                                for="password"
-                                class="block text-sm font-medium text-slate-700 mb-1"
-                                >Mot de passe</label
-                            >
-                            <input
-                                type="password"
-                                name="password"
-                                id="password"
-                                required
-                                class="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary transition-all bg-white/80"
-                            />
-                        </div>
+    <div id="google-auth">
+        {% include "auth/_google_btn.html" with g_label="Se connecter avec Google" %}
+    </div>
+</form>
 
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center">
-                                <input
-                                    id="remember"
-                                    name="remember"
-                                    type="checkbox"
-                                    class="h-4 w-4 text-primary focus:ring-primary border-slate-300 rounded"
-                                />
-                                <label
-                                    for="remember"
-                                    class="ml-2 block text-sm text-slate-700"
-                                    >Se souvenir de moi</label
-                                >
-                            </div>
+<p id="signup-link" class="mt-6 text-center text-xs text-gray-500">
+    Pas encore de compte&nbsp;? <a href="{% url 'signup' %}" class="text-blue-600 hover:underline">Créer un compte</a>
+</p>
 
-                            <div class="text-sm">
-                                <a
-                                    href="{% url 'password_reset' %}"
-                                    class="font-medium text-primary hover:text-primary/80"
-                                >
-                                    Mot de passe oublié ?
-                                </a>
-                            </div>
-                        </div>
+<p class="mt-3 text-center text-[11px] text-gray-400">
+    <button type="button" id="role-change" class="text-gray-400 hover:text-blue-600 underline underline-offset-2 transition-colors">
+        Changer de type de compte
+    </button>
+</p>
 
-                        <div>
-                            <button
-                                type="submit"
-                                class="w-full flex justify-center px-4 py-3 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all"
-                            >
-                                Se connecter
-                            </button>
-                        </div>
-                    </div>
-                </form>
+<!-- Choix du profil : affiche à chaque visite, sans choix mémorisé.
+     Administrateur → bouton Google + lien d'inscription visibles.
+     Employé        → identifiant / mot de passe uniquement. -->
+<div id="role-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-dark/40 backdrop-blur-sm"></div>
+    <div class="relative min-h-full flex items-center justify-center p-4">
+        <div class="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl px-6 py-8 text-center" role="dialog" aria-modal="true" aria-labelledby="role-title">
+            <div class="mx-auto w-14 h-14 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                <i class="fa-solid fa-user-shield text-xl"></i>
+            </div>
+            <h2 id="role-title" class="text-lg font-bold text-gray-800 mt-4">Vous vous connectez en tant que…</h2>
+            <p class="text-sm text-gray-500 mt-2">Choisissez votre profil pour adapter la page de connexion.</p>
 
-                <div class="relative my-6">
-                    <div class="absolute inset-0 flex items-center">
-                        <div class="w-full border-t border-slate-300"></div>
-                    </div>
-                    <div class="relative flex justify-center text-sm">
-                        <span class="px-2 bg-slate-50 text-slate-500"
-                            >Ou connectez-vous avec</span
-                        >
-                    </div>
-                </div>
+            <div class="mt-6 space-y-3">
+                <button type="button" data-role="admin"
+                        class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 hover:border-blue-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 transition-all text-left">
+                    <span class="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                        <i class="fa-solid fa-crown text-sm"></i>
+                    </span>
+                    <span>
+                        <span class="block text-sm font-semibold text-gray-800">Administrateur</span>
+                        <span class="block text-xs text-gray-400">Connexion Google et création de compte</span>
+                    </span>
+                </button>
 
-                <div class="flex justify-center space-x-4">
-                    {% include "auth/_google_btn.html" with g_label="Se connecter avec Google" %}
-                </div>
+                <button type="button" data-role="employee"
+                        class="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 hover:border-blue-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 transition-all text-left">
+                    <span class="w-9 h-9 shrink-0 rounded-full bg-slate-600 text-white flex items-center justify-center">
+                        <i class="fa-solid fa-user text-sm"></i>
+                    </span>
+                    <span>
+                        <span class="block text-sm font-semibold text-gray-800">Employé</span>
+                        <span class="block text-xs text-gray-400">Identifiant et mot de passe uniquement</span>
+                    </span>
+                </button>
             </div>
         </div>
-    </body>
-</html>
+    </div>
+</div>
+
+<script>
+    (function () {
+        var modal = document.getElementById('role-modal');
+        if (!modal) { return; }
+        var googleZone = document.getElementById('google-auth');
+        var signupZone = document.getElementById('signup-link');
+
+        function applyRole(role) {
+            var isAdmin = role === 'admin';
+            if (googleZone) { googleZone.classList.toggle('hidden', !isAdmin); }
+            if (signupZone) { signupZone.classList.toggle('hidden', !isAdmin); }
+            modal.classList.add('hidden');
+        }
+
+        var buttons = modal.querySelectorAll('[data-role]');
+        Array.prototype.forEach.call(buttons, function (btn) {
+            btn.addEventListener('click', function () {
+                applyRole(btn.getAttribute('data-role'));
+            });
+        });
+
+        // Aucun choix n'est conservé : le popup revient à chaque visite.
+        modal.classList.remove('hidden');
+        if (buttons.length) { buttons[0].focus(); }
+
+        var change = document.getElementById('role-change');
+        if (change) {
+            change.addEventListener('click', function () {
+                modal.classList.remove('hidden');
+                if (buttons.length) { buttons[0].focus(); }
+            });
+        }
+    })();
+</script>
+{% endblock %}

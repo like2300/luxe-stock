@@ -104,68 +104,24 @@
                 <p class="text-xs text-slate-400 mb-3">Nom affiché dans l’onglet et l’icône du navigateur</p>
 
                 <div class="p-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
-                    <label class="flex items-center justify-between gap-4 cursor-pointer">
-                        <span class="flex items-center gap-3 min-w-0">
-                            <span class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center shrink-0">
-                                {% if shop.favicon %}
-                                <img src="{{ shop.favicon.url }}" alt="Icône du site" class="w-6 h-6 object-contain">
-                                {% else %}
-                                <iconify-icon icon="solar:widget-5-linear" width="18" class="text-slate-300"></iconify-icon>
-                                {% endif %}
-                            </span>
-                            <span class="min-w-0">
-                                <span class="block text-sm font-semibold text-dark">Icône du site (favicon)</span>
-                                <span class="block text-xs text-slate-400">PNG, JPEG ou ICO — 256 Ko max.</span>
-                            </span>
+                    <div class="flex items-center gap-3">
+                        <span class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center shrink-0 overflow-hidden">
+                            <img src="{{ shop.favicon_url }}" alt="Icône du site" id="favicon-preview" class="w-6 h-6 object-contain">
                         </span>
-                        <span class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-sm cursor-pointer shrink-0">
-                            <iconify-icon icon="solar:upload-linear" width="16"></iconify-icon>
-                            <span id="favicon-label">Choisir</span>
+                        <span class="min-w-0">
+                            <span class="block text-sm font-semibold text-dark">Icône du site (favicon)</span>
+                            <span class="block text-xs text-slate-400">Récupérée automatiquement depuis le logo de la société.</span>
                         </span>
-                    </label>
-                    <input type="file" name="favicon" id="id_favicon" accept="image/png,image/jpeg,.ico" class="hidden">
-                    {% if shop.favicon %}
-                    <label class="mt-3 flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
-                        <input type="checkbox" name="favicon_remove" value="1" class="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer">
-                        <span>Retirer l’icône actuelle</span>
-                    </label>
-                    {% endif %}
+                    </div>
                     <p class="mt-3 text-xs text-slate-400">
                         L’onglet du navigateur affiche « {{ shop.document_title }} ».
-                        Sans icône, les initiales de la société sont utilisées.
+                        Sans logo ni icône, les initiales de la société sont utilisées.
                     </p>
                 </div>
 
-                <h3 class="font-bold text-dark mt-6 mb-1">Fonctionnalités</h3>
-                <p class="text-xs text-slate-400 mb-3">Appliquer à toute la boutique</p>
-                <label class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
-                    <span class="min-w-0">
-                        <span class="block text-sm font-semibold text-dark">Scanner de codes-barres</span>
-                        <span class="block text-xs text-slate-400">Page, menu et API de scan</span>
-                    </span>
-                    <input type="checkbox" name="scanner_enabled" value="1" {% if shop.scanner_enabled %}checked{% endif %}
-                           class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 flex-shrink-0 cursor-pointer">
-                </label>
-                <p class="mt-2 text-xs text-slate-400">
-                    Désactivé, le scanner disparaît du menu, de la liste des produits et de l'API.
-                </p>
 
-                <label class="flex items-center justify-between gap-4 mt-3 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
-                    <span class="min-w-0">
-                        <span class="block text-sm font-semibold text-dark">Champ « Code-barres »</span>
-                        <span class="block text-xs text-slate-400">Formulaires ajout / modification produit</span>
-                    </span>
-                    <input type="checkbox" name="barcode_field_enabled" value="1" {% if shop.barcode_field_enabled %}checked{% endif %}
-                           class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 flex-shrink-0 cursor-pointer">
-                </label>
-                <p class="mt-2 text-xs text-slate-400">
-                    Masqué, le champ disparaît des formulaires produit. Le menu Scanner reste disponible :
-                    les codes lus y sont enregistrés automatiquement.
-                </p>
-
-                {% for field in form %}{% for e in field.errors %}<small class="err">{{ e }}</small>{% endfor %}{% endfor %}
             </div>
-            <!-- Aperçu + Son -->
+            <!-- Aperçu -->
             <div class="bg-white rounded-2xl border border-slate-50 shadow-sm p-6">
                 <h2 class="font-bold text-dark mb-1">Aperçu en direct</h2>
                 <p class="text-xs text-slate-400 mb-4">Votre site avec ces couleurs</p>
@@ -186,15 +142,64 @@
                         </div>
                     </div>
                 </div>
-                <h2 class="font-bold text-dark mt-6 mb-1">Son des notifications</h2>
-                <p class="text-xs text-slate-400 mb-3">Réglage de ce PC uniquement</p>
-                <div class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-                    <p id="sound-state-label" class="text-sm font-semibold text-dark">Son activé</p>
-                    <button type="button" id="sound-toggle-settings" class="sound-switch on" aria-label="Son"></button>
-                </div>
-                <button type="button" id="sound-test-settings" class="mt-3 w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600">Tester le son</button>
+
             </div>
         </div>
+
+        <!-- Fonctionnalités -->
+        <div class="mt-6 bg-white rounded-2xl border border-slate-50 shadow-sm p-6">
+            <h2 class="font-bold text-dark mb-1">Fonctionnalités</h2>
+            <p class="text-xs text-slate-400 mb-4">Appliquer à toute la boutique</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div>
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+                        <span class="min-w-0">
+                            <span class="block text-sm font-semibold text-dark">Scanner de codes-barres</span>
+                            <span class="block text-xs text-slate-400">Page, menu et API de scan</span>
+                        </span>
+                        <input type="checkbox" name="scanner_enabled" value="1" {% if shop.scanner_enabled %}checked{% endif %}
+                               class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 flex-shrink-0 cursor-pointer">
+                    </label>
+                    <p class="mt-2 text-xs text-slate-400">
+                        Désactivé, le scanner disparaît du menu, de la liste des produits et de l'API.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+                        <span class="min-w-0">
+                            <span class="block text-sm font-semibold text-dark">Champ « Code-barres »</span>
+                            <span class="block text-xs text-slate-400">Formulaires ajout / modification produit</span>
+                        </span>
+                        <input type="checkbox" name="barcode_field_enabled" value="1" {% if shop.barcode_field_enabled %}checked{% endif %}
+                               class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 flex-shrink-0 cursor-pointer">
+                    </label>
+                    <p class="mt-2 text-xs text-slate-400">
+                        Masqué, le champ disparaît des formulaires produit. Le menu Scanner reste disponible :
+                        les codes lus y sont enregistrés automatiquement.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+                        <span class="min-w-0">
+                            <span class="block text-sm font-semibold text-dark">Son des notifications</span>
+                            <span class="block text-xs text-slate-400" id="sound-state-label">Réglage de ce PC uniquement</span>
+                        </span>
+                        <input type="checkbox" id="sound-toggle-settings"
+                               class="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary focus:ring-offset-0 flex-shrink-0 cursor-pointer">
+                    </label>
+                    <button type="button" id="sound-test-settings" class="mt-3 w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600">Tester le son</button>
+                </div>
+            </div>
+        </div>
+
+        {% if form.errors %}
+        <div class="mt-6 space-y-1">
+            {% for field in form %}{% for e in field.errors %}<small class="err">{{ e }}</small>{% endfor %}{% endfor %}
+        </div>
+        {% endif %}
 
         <div class="mt-6 flex flex-col-reverse sm:flex-row justify-end gap-3">
             <a href="{% url 'dashboard' %}" class="px-6 py-3 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 bg-white text-center shadow-sm">
@@ -219,22 +224,12 @@ document.addEventListener('DOMContentLoaded', function() {
         var r = new FileReader();
         r.onload = function(e) {
             document.getElementById('logo-preview').innerHTML = '<img src="' + e.target.result + '" class="w-full h-full object-cover">';
+            var fp = document.getElementById('favicon-preview');
+            if (fp) fp.src = e.target.result;
         };
         r.readAsDataURL(f);
     });
-    var fi = document.getElementById('id_favicon');
-    if (fi) fi.addEventListener('change', function() {
-        var f = this.files && this.files[0];
-        var lab = document.getElementById('favicon-label');
-        if (lab) lab.textContent = f ? f.name : 'Choisir';
-        var box = fi.closest('label').querySelector('span.w-10');
-        if (!box || !f) return;
-        var r = new FileReader();
-        r.onload = function(e) {
-            box.innerHTML = '<img src="' + e.target.result + '" alt="Icône du site" class="w-6 h-6 object-contain">';
-        };
-        r.readAsDataURL(f);
-    });
+
     function rgba(hex, a) {
         var h = hex.replace('#', '');
         if (h.length === 3) h = h.split('').map(function(c){ return c + c; }).join('');
@@ -264,12 +259,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var sw = document.getElementById('sound-toggle-settings');
     var sl = document.getElementById('sound-state-label');
     function ref() {
-        if (sw) sw.classList.toggle('on', on());
-        if (sl) sl.textContent = on() ? 'Son activé' : 'Son coupé';
+        if (sw) sw.checked = on();
+        if (sl) sl.textContent = 'Réglage de ce PC uniquement — ' + (on() ? 'son activé' : 'son coupé');
     }
     ref();
-    if (sw) sw.addEventListener('click', function() {
-        localStorage.setItem(KEY, on() ? '0' : '1');
+    if (sw) sw.addEventListener('change', function() {
+        localStorage.setItem(KEY, sw.checked ? '1' : '0');
         ref();
         if (on() && typeof window.playNotificationSound === 'function') window.playNotificationSound('AJOUT');
     });

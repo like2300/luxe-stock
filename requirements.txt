@@ -5,3 +5,7 @@ django-unfold>=0.60.0
 python-decouple>=3.8
 requests
 PyJWT>=2.8.0
+djangorestframework>=3.16
+djangorestframework-simplejwt>=5.5
+drf-spectacular>=0.28
+django-cors-headers>=4.7

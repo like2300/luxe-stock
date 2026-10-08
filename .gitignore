@@ -26,3 +26,11 @@ staticfiles/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Scripts de debug temporaires (diagnostic encodage)
+enc_check.py
+nonascii.py
+moji*.py
+moji_scan_out.txt
+test.html
+signup_get.html

@@ -17,6 +17,7 @@
         postUrl: root.dataset.postUrl,
         createUrl: root.dataset.createUrl,
         editUrl: root.dataset.editUrl,
+        ticketUrl: root.dataset.ticketUrl || "",
         canManage: root.dataset.canManage === "1",
         canAdd: root.dataset.canAdd === "1",
         canEdit: root.dataset.canEdit === "1"
@@ -27,6 +28,8 @@
     var statusBox = document.getElementById("scan-status");
     var emptyBox = document.getElementById("scan-empty");
     var validateBtn = document.getElementById("scan-validate");
+    var printTicketsBtn = document.getElementById("scan-print-tickets");
+    var pendingTickets = [];   // Ids des tickets decaisse des sorties enregistrees.
     var resetBtn = document.getElementById("scan-reset");
     var clearBtn = document.getElementById("scan-clear");
     var noteInput = document.getElementById("scan-note");
@@ -113,6 +116,7 @@
                     : "Sortie de stock (vente)";
         }
         if (validateBtn) { validateBtn.classList.toggle("hidden", !moves); }
+        hideTickets();
         render();
     }
 
@@ -353,6 +357,36 @@
         cameraStopBtn.classList.add("hidden");
     }
 
+    /* ---------- Tickets de caisse des sorties ---------- */
+    function hideTickets() {
+        pendingTickets = [];
+        if (printTicketsBtn) { printTicketsBtn.hidden = true; }
+    }
+
+    function showTickets(ids) {
+        pendingTickets = ids;
+        if (!printTicketsBtn) { return; }
+        printTicketsBtn.hidden = false;
+        var label = printTicketsBtn.querySelector("[data-label]");
+        if (label) {
+            label.textContent = ids.length > 1
+                ? "Imprimer les tickets (" + ids.length + ")"
+                : "Imprimer le ticket";
+        }
+    }
+
+    function ticketUrl(id) {
+        // Le gabarit fournit /mouvements/0/ticket/ : « 0 » devient l'id voulu.
+        return cfg.ticketUrl.replace("/0/", "/" + id + "/");
+    }
+
+    function printTickets() {
+        // Une fenetre par ticket : l'ouverture vient d'un clic, elle est autorisee.
+        pendingTickets.forEach(function (id) {
+            window.open(ticketUrl(id), "_blank");
+        });
+    }
+
     /* ---------- Envoi du lot ---------- */
     function submit() {
         if (!cart.length) { return; }
@@ -362,6 +396,7 @@
             return { product_id: item.id, quantity: item.quantity };
         });
         validateBtn.disabled = true;
+        hideTickets();
         say("Enregistrement en cours...", "ok");
 
         fetch(cfg.postUrl, {
@@ -387,6 +422,14 @@
                     return;
                 }
                 say(res.data.count + " ligne(s) enregistrée(s).", "ok");
+                var tickets = (res.data.items || [])
+                    .filter(function (item) { return item.movement; })
+                    .map(function (item) { return item.movement; });
+                if (mode === MODE_OUT && tickets.length) {
+                    showTickets(tickets);
+                } else {
+                    hideTickets();
+                }
                 cart = [];
                 render();
             })
@@ -443,14 +486,17 @@
     cameraBtn.addEventListener("click", startCamera);
     cameraStopBtn.addEventListener("click", stopCamera);
     validateBtn.addEventListener("click", submit);
+    if (printTicketsBtn) { printTicketsBtn.addEventListener("click", printTickets); }
     clearBtn.addEventListener("click", function () {
         cart = [];
+        hideTickets();
         render();
         say("Liste vidée.", "ok");
         focusInput();
     });
     resetBtn.addEventListener("click", function () {
         cart = [];
+        hideTickets();
         render();
         if (noteInput) { noteInput.value = ""; }
         focusInput();

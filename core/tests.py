@@ -5,11 +5,12 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 
 from django.urls import reverse
-from django.utils.http import urlencode
+from django.utils.http import urlencode, urlsafe_base64_encode
 
 from allauth.socialaccount.models import SocialAccount
 from PIL import Image
@@ -362,6 +363,13 @@ class ScanTests(TestCase):
         self.assertEqual(self.product.quantity, 14)
         self.assertEqual(self.product.movements.get().kind, "IN")
 
+    def test_scan_returns_the_ticket_id(self):
+        # La page scanner ouvre le ticket decaisse de chaque sortie enregistree.
+        r = self.post_lines([{"product_id": self.product.pk, "quantity": 2}])
+        self.assertEqual(r.status_code, 200)
+        mv = StockMovement.objects.get()
+        self.assertEqual(r.json()["items"][0]["movement"], mv.pk)
+
     def test_out_above_stock_is_refused(self):
         r = self.post_lines([{"product_id": self.product.pk, "quantity": 11}])
         self.assertEqual(r.status_code, 400)
@@ -559,6 +567,10 @@ class ToastTests(TestCase):
         product = Product.objects.create(shop=self.shop, name=name, sku=sku, quantity=0)
         return push_notification(product, Notification.OUT_OF_STOCK, user=self.user)
 
+    def prime(self):
+        """Première visite : elle cale le creneau de session, sans alerte."""
+        return self.client.get(reverse("dashboard")).content.decode()
+
     def test_every_page_carries_the_toast_layer(self):
         for name in ("dashboard", "product_list", "category_list", "movement_list",
                      "notification_list", "employee_list", "settings"):
@@ -582,6 +594,7 @@ class ToastTests(TestCase):
         self.assertNotIn("Catégorie supprimée.", self.client.get(reverse("dashboard")).content.decode())
 
     def test_new_notification_is_shown_once(self):
+        self.prime()
         self.stock_out("Jus", "PRD-0001")
         body = self.client.get(reverse("dashboard")).content.decode()
         self.assertIn('data-toast-title="Rupture de stock"', body)
@@ -593,6 +606,7 @@ class ToastTests(TestCase):
         )
 
     def test_notification_queue_is_served_in_batches(self):
+        self.prime()
         for i in range(4):
             self.stock_out(f"Produit {i}", f"PRD-{i}")
         # Trois alertes par affichage, la derniere attend la page suivante.
@@ -609,8 +623,114 @@ class ToastTests(TestCase):
         # Sans creneau de session, l'historique n'est pas rattrape en rafale.
         for i in range(4):
             self.stock_out(f"Produit {i}", f"PRD-{i}")
-        body = self.client.get(reverse("dashboard")).content.decode()
-        self.assertNotIn('data-toast-title="Rupture de stock"', body)
+        self.assertNotIn('data-toast-title="Rupture de stock"', self.prime())
+
+
+class AuthPagesTests(TestCase):
+    """Pages d'authentification : elles partagent toutes la meme coquille visuelle."""
+
+    # Le decor bleu de la carte, la largeur maximale et la version de Font Awesome
+    # demandes pour la refonte : un retour a l'ancien habillage se voit ici.
+    SHELL_MARKERS = (
+        "bg-gradient-to-br from-blue-300 via-blue-500 to-indigo-600",
+        "max-w-4xl",
+        "md:grid-cols-2",
+        "font-awesome/6.4.0/css/all.min.css",
+        'id="toast-layer"',
+        "js/toasts.js",
+    )
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def _assert_shell(self, response):
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        for marker in self.SHELL_MARKERS:
+            self.assertIn(marker, body)
+        # Un seul style de page : plus de police ni de cadre violet par defaut.
+        self.assertNotIn("5802f7", body)
+        return body
+
+    def test_public_pages_share_the_split_card_shell(self):
+        for name in ("login", "signup", "password_reset", "password_reset_done"):
+            with self.subTest(page=name):
+                self._assert_shell(self.client.get(reverse(name)))
+
+    def test_password_reset_complete_shares_the_shell(self):
+        self.client.post(reverse("signup"),
+                         {"username": "boss", "password1": self.PASSWORD, "password2": self.PASSWORD})
+        self._assert_shell(self.client.get(reverse("password_reset_complete")))
+
+    def test_create_shop_shares_the_shell(self):
+        self.client.post(reverse("signup"),
+                         {"username": "boss", "password1": self.PASSWORD, "password2": self.PASSWORD})
+        body = self._assert_shell(self.client.get(reverse("create_shop")))
+        for name in ("primary_color", "sidebar_color", "header_color", "background_color"):
+            self.assertIn(f'name="{name}"', body)
+
+    def test_expired_reset_link_offers_a_new_one(self):
+        user = User.objects.create_user("boss", password=self.PASSWORD)
+        url = reverse("password_reset_confirm",
+                      args=[urlsafe_base64_encode(str(user.pk).encode()), "jeton-perime"])
+        body = self._assert_shell(self.client.get(url))
+        self.assertIn("invalide ou a expiré", body)
+        self.assertContains(self.client.get(url), reverse("password_reset"))
+
+    def test_login_links_to_signup_and_reset(self):
+        body = self.client.get(reverse("login")).content.decode()
+        self.assertIn(f'href="{reverse("signup")}"', body)
+        self.assertIn(f'href="{reverse("password_reset")}"', body)
+
+    def test_logout_returns_to_the_styled_login_page(self):
+        user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.client.login(username="boss", password=self.PASSWORD)
+        self.assertRedirects(self.client.post(reverse("logout")), reverse("login"))
+        self._assert_shell(self.client.get(reverse("login")))
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+)
+class PasswordResetEmailTests(TestCase):
+    """L'email de réinitialisation utilise le domaine de la requête."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "boss", password=self.PASSWORD, email="boss@example.org"
+        )
+
+    def request_reset(self):
+        self.client.post(reverse("password_reset"), {"email": "boss@example.org"})
+        self.assertEqual(len(mail.outbox), 1)
+        return mail.outbox[0]
+
+    def test_the_link_uses_the_request_host_not_the_sites_default(self):
+        message = self.request_reset()
+        # Le domaine django.contrib.sites vaudrait « example.com ».
+        self.assertIn("http://testserver/", message.body)
+        self.assertNotIn("example.com", message.body)
+
+    def test_the_subject_and_body_carry_the_brand(self):
+        message = self.request_reset()
+        self.assertIn("Luxe", message.subject)
+        self.assertIn("Luxe", message.body)
+        # Le lien pointe vers la route de confirmation (reset/<uid>/<token>/).
+        self.assertIn("/reset/", message.body)
+
+    def test_the_reset_link_actually_works(self):
+        message = self.request_reset()
+        # Récupère l'URL complète entre « ... » dans l'email, puis la visite.
+        url = next(
+            line for line in message.body.splitlines() if "://" in line
+        ).strip()
+        self.assertTrue(url.startswith("http://testserver/"))
+        # La première visite redirige vers la vue « interne » sécurisée.
+        r = self.client.get(url)
+        while r.status_code == 302:
+            r = self.client.get(r["Location"])
+        self.assertEqual(r.status_code, 200)
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="tests-media-"))
@@ -685,6 +805,25 @@ class BrandingTests(TestCase):
         self.shop.refresh_from_db()
         self.assertFalse(self.shop.favicon)
         self.assertContains(self.client.get(reverse("dashboard")), "data:image/svg+xml,")
+
+    def test_favicon_follows_the_company_logo(self):
+        # Sans manipulation dediee : l'icone de l'onglet est le logo de la societe.
+        self.settings_post(logo=image_upload("logo.png"))
+        self.shop.refresh_from_db()
+        self.assertTrue(self.shop.logo)
+        self.assertContains(
+            self.client.get(reverse("dashboard")),
+            '<link rel="icon" href="/media/%s">' % self.shop.logo.name)
+
+    def test_settings_page_groups_the_feature_checkboxes(self):
+        # Une carte unique « Fonctionnalités » : les trois reglages en cases
+        # a cocher, et plus d'upload dedie pour le favicon (il suit le logo).
+        r = self.client.get(reverse("settings"))
+        self.assertContains(r, 'name="scanner_enabled"')
+        self.assertContains(r, 'name="barcode_field_enabled"')
+        self.assertContains(r, 'id="sound-toggle-settings"')
+        self.assertNotContains(r, 'name="favicon"')
+        self.assertNotContains(r, 'favicon_remove')
 
     def test_favicon_is_refused_when_too_heavy(self):
         r = self.settings_post(favicon=self.big_image_upload())
@@ -902,3 +1041,363 @@ class GoogleOAuthTests(TestCase):
                                 {"code": "auth-code", "state": state})
         self.assertEqual(User.objects.count(), 1)
         self.assertEqual(SocialAccount.objects.count(), 1)
+
+
+class MovementTicketTests(TestCase):
+    """Ticket de caisse 80 mm : rendu d'une sortie, isolement entre boutiques."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def setUp(self):
+        self.user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.shop = Shop.objects.create(owner=self.user, name="Ma Boutique", currency="FCFA")
+        Membership.objects.create(user=self.user, shop=self.shop, is_owner=True)
+        self.client.login(username="boss", password=self.PASSWORD)
+        self.product = Product.objects.create(
+            shop=self.shop, name="Jus", sku="PRD-0001", sale_price=500, cost_price=300, quantity=10
+        )
+
+        self.other_user = User.objects.create_user("autre", password=self.PASSWORD)
+        self.other_shop = Shop.objects.create(owner=self.other_user, name="Autre", currency="EUR")
+        Membership.objects.create(user=self.other_user, shop=self.other_shop, is_owner=True)
+        self.other_product = Product.objects.create(
+            shop=self.other_shop, name="Secret", sale_price=100, quantity=3
+        )
+
+    def exit(self, product=None, qty=2, note="vente client"):
+        product = product or self.product
+        self.client.post(reverse("movement_create"),
+                         {"product": product.pk, "kind": "OUT", "quantity": str(qty), "note": note})
+        return StockMovement.objects.filter(product=product, kind=StockMovement.OUT).latest("pk")
+
+    def test_exit_redirects_to_its_ticket_in_auto_print(self):
+        self.exit()
+        r = self.client.post(reverse("movement_create"),
+                             {"product": self.product.pk, "kind": "OUT", "quantity": "1", "note": "v"})
+        last = StockMovement.objects.latest("pk")
+        # La sortie ouvre le ticket avec ?auto=1 : la caisse imprime sans clic.
+        self.assertRedirects(r, reverse("movement_ticket", args=[last.pk]) + "?auto=1")
+        auto = self.client.get(reverse("movement_ticket", args=[last.pk]) + "?auto=1")
+        self.assertContains(auto, "setTimeout")
+        plain = self.client.get(reverse("movement_ticket", args=[last.pk]))
+        self.assertNotContains(plain, "setTimeout")
+
+    def test_entry_still_redirects_to_the_history(self):
+        r = self.client.post(reverse("movement_create"),
+                             {"product": self.product.pk, "kind": "IN", "quantity": "5", "note": ""})
+        self.assertRedirects(r, reverse("movement_list"))
+
+    def test_ticket_shows_shop_line_and_total(self):
+        m = self.exit(qty=2)  # 2 x 500 = 1 000,00
+        body = self.client.get(reverse("movement_ticket", args=[m.pk])).content.decode()
+        for needle in ("Ma Boutique", "Ticket de vente", "Jus", "PRD-0001",
+                       "1\u00a0000,00", "FCFA", "vente client", "Merci de votre visite"):
+            self.assertIn(needle, body)
+        self.assertIn("size: 80mm auto", body)
+        self.assertIn("window.print()", body)
+        # Format thermique : page 80 mm, marges nulles, couleurs conservées à l'impression.
+        self.assertIn("@page { size: 80mm auto; margin: 0; }", body)
+        self.assertIn("print-color-adjust: exact", body)
+        self.assertIn("page-break-inside: avoid", body)
+
+    def test_ticket_is_limited_to_exits_of_the_shop(self):
+        self.client.post(reverse("movement_create"),
+                         {"product": self.product.pk, "kind": "IN", "quantity": "5", "note": ""})
+        mv_in = StockMovement.objects.filter(kind=StockMovement.IN).latest("pk")
+        self.assertEqual(self.client.get(reverse("movement_ticket", args=[mv_in.pk])).status_code, 404)
+
+        other = self.other_product.movements.create(kind="OUT", quantity=1, user=self.other_user)
+        self.assertEqual(self.client.get(reverse("movement_ticket", args=[other.pk])).status_code, 404)
+
+    def test_history_shows_the_latest_exit_first_with_a_print_button(self):
+        first = self.exit(qty=1)
+        eau = Product.objects.create(
+            shop=self.shop, name="Eau", sku="PRD-0002", sale_price=200, quantity=5
+        )
+        second = self.exit(product=eau, qty=1)
+
+        self.client.post(reverse("movement_create"),
+                         {"product": self.product.pk, "kind": "IN", "quantity": "5", "note": ""})
+        mv_in = StockMovement.objects.filter(kind=StockMovement.IN).latest("pk")
+
+        body = self.client.get(reverse("movement_list")).content.decode()
+        url_first = reverse("movement_ticket", args=[first.pk])
+        url_second = reverse("movement_ticket", args=[second.pk])
+        self.assertIn(url_first, body)
+        self.assertIn(url_second, body)
+        # La plus recente sort en tete de liste.
+        self.assertLess(body.index(url_second), body.index(url_first))
+        # Pas de ticket pour une entree.
+        self.assertNotIn(reverse("movement_ticket", args=[mv_in.pk]), body)
+
+
+class MovementCrudTests(TestCase):
+    """Modification et suppression d'un mouvement : le stock suit toujours."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def setUp(self):
+        self.user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.shop = Shop.objects.create(owner=self.user, name="Ma Boutique", currency="FCFA")
+        Membership.objects.create(user=self.user, shop=self.shop, is_owner=True)
+        self.client.login(username="boss", password=self.PASSWORD)
+        self.product = Product.objects.create(
+            shop=self.shop, name="Jus", sku="PRD-0001", sale_price=500,
+            quantity=10, alert_threshold=1,
+        )
+
+    def exit(self, qty=3, note="vente"):
+        self.client.post(reverse("movement_create"),
+                         {"product": self.product.pk, "kind": "OUT",
+                          "quantity": str(qty), "note": note})
+        return StockMovement.objects.filter(kind=StockMovement.OUT).latest("pk")
+
+    def test_edit_recalculates_the_stock(self):
+        m = self.exit(qty=3)                       # 10 -> 7
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 7)
+
+        r = self.client.post(reverse("movement_edit", args=[m.pk]),
+                             {"product": self.product.pk, "kind": "OUT",
+                              "quantity": "5", "note": "revue"})
+        self.assertRedirects(r, reverse("movement_list"))
+        m.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual((m.quantity, m.note), (5, "revue"))
+        self.assertEqual(self.product.quantity, 5)  # 10 - 5
+
+    def test_edit_can_turn_an_entry_into_an_exit(self):
+        self.client.post(reverse("movement_create"),
+                         {"product": self.product.pk, "kind": "IN", "quantity": "4", "note": ""})
+        m = StockMovement.objects.filter(kind=StockMovement.IN).latest("pk")
+
+        self.client.post(reverse("movement_edit", args=[m.pk]),
+                         {"product": self.product.pk, "kind": "OUT", "quantity": "6", "note": ""})
+        m.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(m.kind, StockMovement.OUT)
+        # L'entrée est annulée (retour à 10) puis la sortie appliquée : 10 - 6.
+        self.assertEqual(self.product.quantity, 4)
+
+    def test_edit_refuses_an_exit_above_the_stock(self):
+        m = self.exit(qty=3)                       # stock a 7
+        r = self.client.post(reverse("movement_edit", args=[m.pk]),
+                             {"product": self.product.pk, "kind": "OUT",
+                              "quantity": "99", "note": ""})
+        self.assertContains(r, "Stock insuffisant")
+        m.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(m.quantity, 3)
+        self.assertEqual(self.product.quantity, 7)
+
+    def test_delete_restores_the_stock(self):
+        m = self.exit(qty=3)
+        r = self.client.post(reverse("movement_delete", args=[m.pk]))
+        self.assertRedirects(r, reverse("movement_list"))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 10)
+        self.assertFalse(StockMovement.objects.filter(pk=m.pk).exists())
+        # Le ticket disparait aussi avec le mouvement supprime.
+        self.assertEqual(self.client.get(reverse("movement_ticket", args=[m.pk])).status_code, 404)
+
+    def test_delete_of_an_entry_removes_the_stock(self):
+        self.client.post(reverse("movement_create"),
+                         {"product": self.product.pk, "kind": "IN", "quantity": "4", "note": ""})
+        m = StockMovement.objects.filter(kind=StockMovement.IN).latest("pk")
+        self.client.post(reverse("movement_delete", args=[m.pk]))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 10)
+
+    def test_employee_without_stock_permission_is_refused(self):
+        m = self.exit(qty=3)
+        self.client.post(reverse("employee_create"),
+                         {"username": "emp", "password": self.PASSWORD,
+                          "can_view_products": "on"})
+        self.client.logout()
+        self.client.login(username="emp", password=self.PASSWORD)
+
+        self.assertEqual(self.client.get(reverse("movement_edit", args=[m.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse("movement_delete", args=[m.pk])).status_code, 403)
+        body = self.client.get(reverse("movement_list")).content.decode()
+        self.assertNotIn(reverse("movement_edit", args=[m.pk]), body)
+        self.assertNotIn(reverse("movement_delete", args=[m.pk]), body)
+
+    def test_employee_with_stock_permission_can_edit(self):
+        m = self.exit(qty=3)
+        self.client.post(reverse("employee_create"),
+                         {"username": "emp", "password": self.PASSWORD,
+                          "can_view_products": "on", "can_manage_stock": "on"})
+        self.client.logout()
+        self.client.login(username="emp", password=self.PASSWORD)
+
+        r = self.client.post(reverse("movement_edit", args=[m.pk]),
+                             {"product": self.product.pk, "kind": "OUT",
+                              "quantity": "4", "note": "employe"})
+        self.assertRedirects(r, reverse("movement_list"))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 6)
+
+
+class NewPermissionTests(TestCase):
+    """Trois permissions ajoutees : employes, tickets de caisse, parametres."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def setUp(self):
+        self.user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.shop = Shop.objects.create(owner=self.user, name="Ma Boutique", currency="FCFA")
+        Membership.objects.create(user=self.user, shop=self.shop, is_owner=True)
+        self.client.login(username="boss", password=self.PASSWORD)
+        self.product = Product.objects.create(
+            shop=self.shop, name="Jus", sku="PRD-0001", sale_price=500, quantity=10
+        )
+
+    def employee(self, **perms):
+        self.client.post(reverse("employee_create"),
+                         {"username": "emp", "password": self.PASSWORD, **perms})
+        self.client.logout()
+        self.client.login(username="emp", password=self.PASSWORD)
+        return Membership.objects.get(user__username="emp")
+
+    def make_exit(self):
+        self.client.post(reverse("movement_create"),
+                         {"product": self.product.pk, "kind": "OUT", "quantity": "2", "note": ""})
+        return StockMovement.objects.filter(kind=StockMovement.OUT).latest("pk")
+
+    def test_the_form_lists_the_three_new_permissions(self):
+        self.client.post(reverse("employee_create"),
+                         {"username": "emp", "password": self.PASSWORD})
+        m = Membership.objects.get(user__username="emp")
+        body = self.client.get(reverse("employee_edit", args=[m.pk])).content.decode()
+        for label in ("Gérer les employés", "Imprimer les tickets de caisse",
+                      "Gérer les paramètres de la boutique"):
+            self.assertIn(label, body)
+
+    def test_owner_keeps_employees_and_settings(self):
+        self.assertEqual(self.client.get(reverse("employee_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
+
+    def test_employee_without_new_permissions_is_refused(self):
+        self.employee()
+        self.assertEqual(self.client.get(reverse("employee_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("settings")).status_code, 403)
+        # Le menu n'affiche meme plus les entrees.
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertNotIn(reverse("employee_list"), body)
+        self.assertNotIn(reverse("settings"), body)
+
+    def test_granted_employee_manages_the_employees(self):
+        self.employee(can_manage_employees="on")
+        self.assertEqual(self.client.get(reverse("employee_list")).status_code, 200)
+
+    def test_granted_employee_opens_the_settings(self):
+        self.employee(can_manage_settings="on")
+        self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
+
+    def test_ticket_printing_needs_its_permission(self):
+        m = self.make_exit()
+        self.employee(can_view_products="on")      # can_print_tickets non coche
+        self.assertEqual(self.client.get(reverse("movement_ticket", args=[m.pk])).status_code, 403)
+        self.assertNotIn(reverse("movement_ticket", args=[m.pk]),
+                         self.client.get(reverse("movement_list")).content.decode())
+
+    def test_ticket_printing_when_granted(self):
+        m = self.make_exit()
+        self.employee(can_view_products="on", can_print_tickets="on")
+        self.assertEqual(self.client.get(reverse("movement_ticket", args=[m.pk])).status_code, 200)
+
+    def test_exit_without_ticket_permission_returns_to_the_history(self):
+        self.employee(can_view_products="on", can_manage_stock="on")
+        r = self.client.post(reverse("movement_create"),
+                             {"product": self.product.pk, "kind": "OUT", "quantity": "1", "note": ""})
+        self.assertRedirects(r, reverse("movement_list"))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 9)
+
+    def test_category_popup_is_fitted_to_the_page(self):
+        self.client.get(reverse("category_list"))  # proprietaire : la popup existe
+        body = self.client.get(reverse("category_list")).content.decode()
+        self.assertIn('id="category-modal"', body)
+        self.assertIn("overflow-y-auto", body)
+        self.assertIn("max-height: calc(100dvh - 2rem)", body)
+        self.assertIn("function pageScroll", body)
+
+
+class CategoryEditTests(TestCase):
+    """Renommer une categorie depuis la liste /categories/."""
+
+    PASSWORD = "Zx9!kqPw72"
+
+    def setUp(self):
+        self.user = User.objects.create_user("boss", password=self.PASSWORD)
+        self.shop = Shop.objects.create(owner=self.user, name="Ma Boutique", currency="FCFA")
+        Membership.objects.create(user=self.user, shop=self.shop, is_owner=True)
+        self.client.login(username="boss", password=self.PASSWORD)
+        self.category = Category.objects.create(shop=self.shop, name="Boissons")
+        self.other = Category.objects.create(shop=self.shop, name="Epicerie")
+        self.product = Product.objects.create(
+            shop=self.shop, name="Jus", sku="PRD-0001", category=self.category, quantity=10
+        )
+
+    def employee(self, **perms):
+        self.client.post(reverse("employee_create"),
+                         {"username": "emp", "password": self.PASSWORD, **perms})
+        self.client.logout()
+        self.client.login(username="emp", password=self.PASSWORD)
+
+    def test_the_list_shows_the_edit_popup_and_buttons(self):
+        body = self.client.get(reverse("category_list")).content.decode()
+        self.assertIn('id="category-edit-modal"', body)
+        self.assertIn("data-edit-category", body)
+        self.assertIn(reverse("category_edit", args=[self.category.pk]), body)
+        self.assertIn('id="modifier-categorie"', body)
+
+    def test_owner_renames_the_category(self):
+        r = self.client.post(reverse("category_edit", args=[self.category.pk]),
+                             {"name": "Boissons fraiches"})
+        # On ne suit pas la redirection : elle consommerait le message toast.
+        self.assertRedirects(r, reverse("category_list"), fetch_redirect_response=False)
+        self.category.refresh_from_db()
+        self.assertEqual(self.category.name, "Boissons fraiches")
+        body = self.client.get(reverse("category_list")).content.decode()
+        self.assertIn('data-toast="Catégorie modifiée."', body)
+
+    def test_rename_follows_the_products(self):
+        self.client.post(reverse("category_edit", args=[self.category.pk]),
+                         {"name": "Drinks"})
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.category.name, "Drinks")
+
+    def test_duplicated_name_is_refused_without_touching_the_row(self):
+        r = self.client.post(reverse("category_edit", args=[self.category.pk]),
+                             {"name": "Epicerie"})
+        # Même si le nom existe déjà, on reste sur la page et on affiche un toast.
+        self.assertEqual(r.status_code, 200)
+        self.category.refresh_from_db()
+        self.assertEqual(self.category.name, "Boissons")
+        body = r.content.decode()
+        self.assertIn('data-toast="Cette catégorie existe déjà."', body)
+
+    def test_empty_name_keeps_the_popup_open_with_the_error(self):
+        r = self.client.post(reverse("category_edit", args=[self.category.pk]),
+                             {"name": ""})
+        self.assertEqual(r.status_code, 200)
+        body = r.content.decode()
+        self.assertIn("openCategoryEditModal", body)
+        self.assertIn("Ce champ est obligatoire.", body)
+
+    def test_employee_without_the_permission_is_refused(self):
+        self.employee()
+        self.assertEqual(
+            self.client.get(reverse("category_edit", args=[self.category.pk])).status_code, 403)
+        self.assertEqual(
+            self.client.post(reverse("category_edit", args=[self.category.pk]),
+                             {"name": "Hacked"}).status_code, 403)
+
+    def test_granted_employee_renames_the_category(self):
+        self.employee(can_manage_categories="on")
+        r = self.client.post(reverse("category_edit", args=[self.category.pk]),
+                             {"name": "Sodas"})
+        self.assertRedirects(r, reverse("category_list"))
+        self.category.refresh_from_db()
+        self.assertEqual(self.category.name, "Sodas")

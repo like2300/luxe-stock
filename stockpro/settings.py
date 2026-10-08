@@ -1,11 +1,17 @@
 from pathlib import Path
+from datetime import timedelta
+
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-5l7(@gkzyx(r6uz(wo=dm9h%t-7(!drn^v+qdk-9+!*or&=!+1'
 DEBUG = True
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in config('ALLOWED_HOSTS', default='').split(',')
+    if host.strip()
+]
 
 INSTALLED_APPS = [
     'unfold',
@@ -20,11 +26,17 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
+    'rest_framework',
+    'corsheaders',
+    'drf_spectacular',
+    'rest_framework_simplejwt.token_blacklist',
     'core',
+    'api',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -129,3 +141,73 @@ UNFOLD = {
     'SITE_TITLE': 'Stock - Administration',
     'SITE_HEADER': 'Gestion du Stock',
 }
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.ScopedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'push': '60/min',
+        'pull': '120/min',
+        'login': '20/min',
+    },
+    'EXCEPTION_HANDLER': 'api.exceptions.api_exception_handler',
+}
+
+SIMPLE_JWT = {
+    # Des durees, pas des secondes : simplejwt additionne la duree a l'instant
+    # d'emission. Un entier ici leve une TypeError a la creation du jeton.
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        seconds=config('JWT_ACCESS_TOKEN_LIFETIME', default=60 * 60, cast=int)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=config('JWT_REFRESH_TOKEN_LIFETIME_DAYS', default=30, cast=int)
+    ),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Stock API',
+    'DESCRIPTION': (
+        "API REST de l'application Stock. Les règles métier (mouvements de "
+        "stock, notifications, seuils d'alerte) sont partagées avec "
+        "l'application web Django."
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': '/api/v1',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
+    'TAGS': [
+        {'name': 'Auth', 'description': 'Connexion, inscription, jetons JWT.'},
+        {'name': 'Boutique', 'description': 'Boutique, thème, logo, paramètres.'},
+        {'name': 'Produits', 'description': 'Produits, catégories, mouvements, scan.'},
+        {'name': 'Notifications', 'description': 'Fil et état de lecture des notifications.'},
+        {'name': 'Employés', 'description': 'Comptes et permissions (propriétaire).'},
+        {'name': 'Profil', 'description': 'Profil, photo, avatar.'},
+        {'name': 'Synchronisation', 'description': 'Pull/push hors ligne par curseur.'},
+    ],
+}
+
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in config('CORS_ALLOWED_ORIGINS', default='').split(',')
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = True

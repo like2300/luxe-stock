@@ -113,6 +113,10 @@ class ShopCreateForm(StyledFormMixin, forms.ModelForm):
                 cleaned[field_name] = Shop._meta.get_field(field_name).default
         return cleaned
 
+    @property
+    def color_fields(self):
+        return [self[n] for n in ["primary_color", "sidebar_color", "header_color", "background_color"]]
+
 
 class ShopSettingsForm(StyledFormMixin, forms.ModelForm):
     # Un favicon est charge a chaque onglet du navigateur : on refuse les
@@ -344,7 +348,11 @@ class EmployeeForm(StyledFormMixin, forms.Form):
         super().__init__(*args, **kwargs)
         self.user_obj = user
         for name, label in PERMISSIONS:
-            initial = getattr(membership, name) if membership else name == "can_view_products"
+            if membership:
+                initial = getattr(membership, name)
+            else:
+                # Cree un nouveau compte : lecture et caisse ouvertes par defaut.
+                initial = name in ("can_view_products", "can_print_tickets")
             self.fields[name] = forms.BooleanField(
                 label=label,
                 required=False,

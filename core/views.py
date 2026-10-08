@@ -1,7 +1,9 @@
 import json
+import logging
 
 from django.contrib import messages
 from django.contrib.auth import login
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
@@ -10,6 +12,7 @@ from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_POST
@@ -34,6 +37,7 @@ from .models import (
     Product,
     Shop,
     StockMovement,
+    notify_threshold_crossing,
     push_notification,
     record_adjustment,
     record_movement,
@@ -42,6 +46,33 @@ from .models import (
 # Nombre de notifications envoyées au gabarit : le filtrage et la pagination
 # se font ensuite dans le navigateur, sans rechargement de page.
 NOTIFICATION_FEED_LIMIT = 200
+
+logger = logging.getLogger(__name__)
+
+
+class DynamicPasswordResetView(auth_views.PasswordResetView):
+    """Email de réinitialisation dont le domaine suit la requête.
+
+    Sans domain_override, Django prend le domaine de django.contrib.sites
+    (« example.com » en l'absence de réglage) : le lien de l'email ne mène
+    donc nulle part. On passe request.get_host() (localhost, IP ou vrai
+    domaine) et on injecte la boutique pour personnaliser le message.
+    """
+
+    def form_valid(self, form):
+        form.save(
+            use_https=self.request.is_secure(),
+            token_generator=self.token_generator,
+            from_email=self.from_email,
+            email_template_name=self.email_template_name,
+            subject_template_name=self.subject_template_name,
+            request=self.request,
+            html_email_template_name=self.html_email_template_name,
+            domain_override=self.request.get_host(),
+            extra_email_context={"shop": getattr(self.request, "shop", None)},
+        )
+        # FormView.form_valid : redirection vers « done », sans double envoi.
+        return super(auth_views.PasswordResetView, self).form_valid(form)
 
 
 # ---------- Compte & boutique ----------
@@ -60,11 +91,26 @@ def signup(request):
         return redirect("dashboard")
     form = SignupForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        # Deux backends sont configurés (ModelBackend + allauth) : sans cet argument
-        # Django lève « You have multiple authentication backends configured ».
-        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-        return redirect("create_shop")
+        try:
+            user = form.save()
+            # Deux backends sont configurés (ModelBackend + allauth) : sans cet argument
+            # Django lève « You have multiple authentication backends configured ».
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+            return redirect("create_shop")
+        except Exception:
+            # Une erreur imprévue (base de données, doublon...) ne doit pas
+            # renvoyer une page blanche : on la journalise et on la montre en toast.
+            logger.exception(
+                "Inscription impossible pour %r", request.POST.get("username")
+            )
+            messages.error(
+                request,
+                "Une erreur inattendue est survenue pendant l'inscription. "
+                "Merci de réessayer dans un instant.",
+            )
+            # Le formulaire lié a été consommé par l'échec : on le rebâtit avec
+            # les mêmes saisies pour réafficher la page avec les valeurs.
+            form = SignupForm(request.POST)
     return render(request, "auth/signup.html", {"form": form})
 
 
@@ -86,7 +132,7 @@ def create_shop(request):
     return render(request, "auth/create_shop.html", {"form": form})
 
 
-@owner_required
+@perm_required("can_manage_settings")
 def shop_settings(request):
     shop = request.shop
     if request.method == "POST" and "reset" in request.POST:
@@ -352,6 +398,21 @@ def product_delete(request, pk):
 
 
 # ---------- Catégories ----------
+def _category_page(request, form, **extra):
+    """Rendu commun de la liste (création, modification, recherche)."""
+    q = request.GET.get("q", "").strip()
+    categories = (
+        request.shop.categories.filter(name__icontains=q)
+        if q
+        else request.shop.categories.all()
+    )
+    return render(
+        request,
+        "category_list.html",
+        {"form": form, "categories": categories, "q": q, **extra},
+    )
+
+
 @perm_required("can_manage_categories")
 def category_list(request):
     form = CategoryForm(request.POST or None)
@@ -364,19 +425,30 @@ def category_list(request):
             c.save()
             messages.success(request, "Catégorie ajoutée.")
         return redirect("category_list")
-    return render(
-        request,
-        "category_list.html",
-        {
-            "form": form,
-            "categories": request.shop.categories.filter(
-                name__icontains=request.GET.get("q", "").strip()
-            )
-            if request.GET.get("q", "").strip()
-            else request.shop.categories.all(),
-            "q": request.GET.get("q", "").strip(),
-        },
-    )
+    return _category_page(request, form)
+
+
+@perm_required("can_manage_categories")
+def category_edit(request, pk):
+    """Renomme une catégorie depuis la popup « Modifier » de la liste."""
+    c = get_object_or_404(Category, pk=pk, shop=request.shop)
+    form = CategoryForm(request.POST or None, instance=c)
+    if request.method == "POST":
+        if form.is_valid():
+            candidate = form.save(commit=False)
+            duplicate = Category.objects.filter(
+                shop=request.shop, name__iexact=candidate.name
+            ).exclude(pk=c.pk)
+            if duplicate.exists():
+                messages.error(request, "Cette catégorie existe déjà.")
+                return _category_page(request, form, edit_category=c)
+            candidate.save()
+            messages.success(request, "Catégorie modifiée.")
+            return redirect("category_list")
+        # Formulaire invalide (nom vide, etc.) : la popup reste ouverte avec
+        # les erreurs de champ, pas de toast.
+        return _category_page(request, form, edit_category=c)
+    return _category_page(request, form, edit_category=c)
 
 
 @require_POST
@@ -531,7 +603,7 @@ def movement_create(request):
         cd = form.cleaned_data
         p = cd["product"]
         kind = cd["kind"]
-        record_movement(p, kind, cd["quantity"], cd["note"], request.user)
+        mv = record_movement(p, kind, cd["quantity"], cd["note"], request.user)
         p.refresh_from_db()
         push_notification(
             p,
@@ -543,8 +615,14 @@ def movement_create(request):
             f"{cd['quantity']} — {p.name} ({p.quantity} en stock)",
         )
         messages.success(request, "Mouvement enregistré.")
+        # Une sortie est une vente : on ouvre le ticket de caisse en auto-impression
+        # si l'employe a le droit d'imprimer (sinon l'historique suffit).
+        if kind == StockMovement.OUT:
+            if request.membership.has("can_print_tickets"):
+                return redirect(reverse("movement_ticket", args=[mv.pk]) + "?auto=1")
+            return redirect("movement_list")
         return redirect("movement_list")
-    
+
     return render(
         request,
         "movement_create.html",
@@ -554,6 +632,132 @@ def movement_create(request):
             "categories": categories,
         },
     )
+
+
+@perm_required("can_print_tickets")
+@require_GET
+def movement_ticket(request, pk):
+    """Ticket de caisse 80 mm d'une sortie, rendu à la volée (aucun modèle dédié).
+
+    Seules les sorties de la boutique du membre sont imprimables : une entrée
+    ou un mouvement d'une autre boutique renvoie 404.
+    """
+    m = get_object_or_404(
+        StockMovement.objects.select_related("product", "user", "product__category"),
+        pk=pk,
+        product__shop=request.shop,
+        kind=StockMovement.OUT,
+    )
+    shop = request.shop
+    return render(
+        request,
+        "movement_ticket.html",
+        {
+            "m": m,
+            "product": m.product,
+            "shop": shop,
+            "unit_price": _money(m.product.sale_price),
+            "subtotal": _money(m.product.sale_price * m.quantity),
+            "currency": shop.currency,
+        },
+    )
+
+
+def _money(value):
+    """Format monétaire français du ticket : « 1 500,00 »."""
+    return f"{value:,.2f}".replace(",", "\u00a0").replace(".", ",")
+
+
+@perm_required("can_manage_stock")
+def movement_edit(request, pk):
+    """Modification d'un mouvement : annulation de l'ancien effet, puis nouveau.
+
+    Le stock est donc recalculé au lieu d'être simplement écrasé, ce qui garde
+    l'historique cohérent avec la quantité réellement en rayon.
+    """
+    m = get_object_or_404(
+        StockMovement.objects.select_related("product"),
+        pk=pk,
+        product__shop=request.shop,
+    )
+    # ModelForm recopie les nouvelles valeurs sur l'instance dès la validation :
+    # l'ancien état doit être mémorisé avant, sinon l'annulation se ferait sur
+    # la nouvelle quantité et le stock ne bougerait pas.
+    old_product_id, old_kind, old_qty = m.product_id, m.kind, m.quantity
+    form = MovementForm(request.POST or None, instance=m, shop=request.shop)
+    if request.method == "POST" and form.is_valid():
+        cd = form.cleaned_data
+        new_p, new_kind, new_qty = cd["product"], cd["kind"], cd["quantity"]
+        # Stock disponible une fois l'ancien mouvement annulé.
+        if new_p.pk == old_product_id:
+            available = new_p.quantity + (
+                old_qty if old_kind == StockMovement.OUT else -old_qty
+            )
+        else:
+            available = new_p.quantity
+        if new_kind == StockMovement.OUT and new_qty > available:
+            form.add_error("quantity", f"Stock insuffisant (disponible : {available}).")
+        else:
+            with transaction.atomic():
+                old_p = Product.objects.select_for_update().get(pk=old_product_id)
+                old_p.quantity = (
+                    old_p.quantity - old_qty
+                    if old_kind == StockMovement.IN
+                    else old_p.quantity + old_qty
+                )
+                old_p.save(update_fields=["quantity"])
+
+                if new_p.pk == old_p.pk:
+                    target = old_p
+                else:
+                    target = Product.objects.select_for_update().get(pk=new_p.pk)
+                before = target.quantity
+                target.quantity = (
+                    before + new_qty
+                    if new_kind == StockMovement.IN
+                    else before - new_qty
+                )
+                target.save(update_fields=["quantity"])
+
+                m.product = target
+                m.kind = new_kind
+                m.quantity = new_qty
+                m.note = cd["note"]
+                m.save()
+                notify_threshold_crossing(target, before, request.user)
+            messages.success(request, "Mouvement modifié, stock recalculé.")
+            return redirect("movement_list")
+
+    return render(
+        request,
+        "movement_create.html",
+        {
+            "form": form,
+            "movement": m,
+            "products": Product.objects.filter(shop=request.shop).order_by("name"),
+            "categories": Category.objects.filter(shop=request.shop).order_by("name"),
+        },
+    )
+
+
+@require_POST
+@perm_required("can_manage_stock")
+def movement_delete(request, pk):
+    """Suppression d'un mouvement : son effet sur le stock est annulé."""
+    m = get_object_or_404(StockMovement, pk=pk, product__shop=request.shop)
+    with transaction.atomic():
+        p = Product.objects.select_for_update().get(pk=m.product_id)
+        before = p.quantity
+        p.quantity = (
+            before - m.quantity if m.kind == StockMovement.IN else before + m.quantity
+        )
+        p.save(update_fields=["quantity"])
+        # Suppression logique : la ligne quitte les listes mais reste
+        # synchronisable vers les autres appareils de la boutique.
+        m.soft_delete()
+        notify_threshold_crossing(p, before, request.user)
+    messages.success(request, "Mouvement supprimé, stock recalculé.")
+    return redirect("movement_list")
 
 
 # ---------- Notifications ----------
@@ -681,7 +885,7 @@ def scan_movement_api(request):
     summary = []
     with transaction.atomic():
         for product, qty in prepared:
-            record_movement(product, kind, qty, note, request.user)
+            mv = record_movement(product, kind, qty, note, request.user)
             product.refresh_from_db()
             push_notification(
                 product,
@@ -697,6 +901,8 @@ def scan_movement_api(request):
                     "quantity": qty,
                     "stock": product.quantity,
                     "level": product.level,
+                    # Identifiant du ticket de caisse pour une sortie.
+                    "movement": mv.pk,
                 }
             )
 
@@ -714,6 +920,7 @@ def scan(request):
             "can_manage": request.membership.has("can_manage_stock"),
             "can_add": request.membership.has("can_add_products"),
             "can_edit": request.membership.has("can_edit_products"),
+            "can_print": request.membership.has("can_print_tickets"),
         },
     )
 
@@ -801,7 +1008,7 @@ def suggest_movements(request):
     )
 
 
-@owner_required
+@perm_required("can_manage_employees")
 @require_GET
 def suggest_employees(request):
     q = _suggest_q(request)
@@ -876,7 +1083,7 @@ def notification_clear(request):
 
 
 # ---------- Employés ----------
-@owner_required
+@perm_required("can_manage_employees")
 def employee_list(request):
     members = request.shop.members.filter(is_owner=False).select_related("user")
     q = request.GET.get("q", "").strip()
@@ -905,7 +1112,7 @@ def employee_list(request):
     )
 
 
-@owner_required
+@perm_required("can_manage_employees")
 def employee_create(request):
     form = EmployeeForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -929,7 +1136,7 @@ def employee_create(request):
     )
 
 
-@owner_required
+@perm_required("can_manage_employees")
 def employee_edit(request, pk):
     m = get_object_or_404(Membership, pk=pk, shop=request.shop, is_owner=False)
     form = EmployeeForm(request.POST or None, user=m.user, membership=m)
@@ -961,7 +1168,7 @@ def employee_edit(request, pk):
 
 
 @require_POST
-@owner_required
+@perm_required("can_manage_employees")
 def employee_delete(request, pk):
     m = get_object_or_404(Membership, pk=pk, shop=request.shop, is_owner=False)
     m.user.delete()

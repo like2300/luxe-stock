@@ -54,6 +54,10 @@
                     <th class="px-6 py-4">Quantité</th>
                     <th class="px-6 py-4">Note</th>
                     <th class="px-6 py-4">Par</th>
+                    {% if sp.can_manage_stock %}
+                    <th class="px-6 py-4 text-right">Actions</th>
+                    {% endif %}
+                    <th class="px-6 py-4 text-right">Ticket</th>
                 </tr>
             </thead>
             <tbody id="movement-list">
@@ -69,10 +73,39 @@
                     <td class="px-6 py-4">{{ m.quantity }}</td>
                     <td class="px-6 py-4">{{ m.note|default:"—" }}</td>
                     <td class="px-6 py-4">{{ m.user.username|default:"—" }}</td>
+                    {% if sp.can_manage_stock %}
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex gap-2 justify-end">
+                            <a href="{% url 'movement_edit' m.pk %}" title="Modifier"
+                               class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100">
+                                <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                            </a>
+                            <form method="post" action="{% url 'movement_delete' m.pk %}" class="inline"
+                                  onsubmit="return confirm('Supprimer ce mouvement ? Le stock sera recalculé.');">
+                                {% csrf_token %}
+                                <button type="submit" title="Supprimer"
+                                        class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                    {% endif %}
+                    <td class="px-6 py-4 text-right">
+                        {% if m.kind == 'OUT' and sp.can_print_tickets %}
+                        <a href="{% url 'movement_ticket' m.pk %}" target="_blank" rel="noopener"
+                           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:border-primary hover:text-primary hover:bg-white transition-all">
+                            <iconify-icon icon="solar:printer-linear" width="14"></iconify-icon>
+                            <span>Imprimer</span>
+                        </a>
+                        {% else %}
+                        <span class="text-slate-300 text-xs">—</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="px-6 py-4 text-center text-slate-400">Aucun mouvement trouvé.</td>
+                    <td colspan="8" class="px-6 py-4 text-center text-slate-400">Aucun mouvement trouvé.</td>
                 </tr>
                 {% endfor %}
             </tbody>

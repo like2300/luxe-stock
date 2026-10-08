@@ -14,6 +14,10 @@
             <iconify-icon icon="solar:calendar-date-linear" width="18" height="18" style="color: rgb(88, 2, 247);"></iconify-icon>
             <span>Derniers 30 jours</span>
         </button>
+        <a href="{% url 'movement_create' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/30 bg-white text-primary text-sm font-medium hover:bg-primary hover:text-white hover:border-primary hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all">
+            <iconify-icon icon="solar:arrow-right-up-linear" width="18"></iconify-icon>
+            <span>Nouveau Mouvement</span>
+        </a>
         <a href="{% url 'product_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
             <iconify-icon icon="solar:add-circle-linear" width="18"></iconify-icon>
             <span>Nouveau Produit</span>

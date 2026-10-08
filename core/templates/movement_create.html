@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block page_title %}Nouveau Mouvement — {{ shop.document_title }}{% endblock %}
+{% block page_title %}{% if movement %}Modifier le mouvement n°{{ movement.pk }}{% else %}Nouveau Mouvement{% endif %} — {{ shop.document_title }}{% endblock %}
 {% block breadcrumbs %}
     <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
     <iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
-    <span class="hover:text-primary cursor-pointer transition-colors">Mouvements</span>
+    <span class="hover:text-primary cursor-pointer transition-colors"><a href="{% url 'movement_list' %}">Mouvements</a></span>
     <iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
-    <span class="text-primary">Nouveau Mouvement</span>
+    <span class="text-primary">{% if movement %}Modifier{% else %}Nouveau Mouvement{% endif %}</span>
 {% endblock %}
 {% load static %}
 
@@ -16,8 +16,16 @@
 {% block content %}
 <div class="flex flex-col md:flex-row md:items-end gap-4 gap-x-4 gap-y-4 justify-between mb-8">
     <div>
-        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Nouveau Mouvement de Stock</h1>
-        <p class="text-slate-500">Ajoutez une entrée ou une sortie de stock.</p>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">
+            {% if movement %}Modifier le Mouvement n°{{ movement.pk }}{% else %}Nouveau Mouvement de Stock{% endif %}
+        </h1>
+        <p class="text-slate-500">
+            {% if movement %}
+                Annulez puis réappliquez le mouvement : le stock suit automatiquement.
+            {% else %}
+                Ajoutez une entrée ou une sortie de stock.
+            {% endif %}
+        </p>
     </div>
 </div>
 
@@ -123,9 +131,40 @@
                 Annuler
             </a>
             <button type="submit" class="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
-                Enregistrer le Mouvement
+                {% if movement %}Enregistrer les modifications{% else %}Enregistrer le Mouvement{% endif %}
             </button>
         </div>
     </form>
 </div>
+
+<!-- Catégorie reprise du produit choisi : la suggestion produit porte la
+     catégorie, la liste déroulante des catégories suit sans saisie. -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var categoryByProduct = {
+        {% for p in products %}"{{ p.pk }}": {% if p.category_id %}{{ p.category_id }}{% else %}null{% endif %}, {% endfor %}
+    };
+
+    var categoryRoot = document.querySelector('[data-kind="category"]');
+    var categorySelect = categoryRoot ? categoryRoot.querySelector('select') : null;
+    var productRoot = document.querySelector('[data-kind="product"]');
+    var productSelect = productRoot ? productRoot.querySelector('select') : null;
+    if (!categorySelect || !productSelect) { return; }
+
+    function syncCategory(productPk) {
+        var categoryId = categoryByProduct[String(productPk)];
+        categorySelect.value = categoryId ? String(categoryId) : "";
+        // L'autocomplétion des catégories écoute ce changement pour afficher le nom.
+        categorySelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // Le widget produit dispatch ce changement quand une suggestion est choisie.
+    productSelect.addEventListener('change', function () {
+        syncCategory(productSelect.value);
+    });
+
+    // Produit pré-rempli à l'arrivée sur la page (?product=…).
+    if (productSelect.value) { syncCategory(productSelect.value); }
+});
+</script>
 {% endblock %}

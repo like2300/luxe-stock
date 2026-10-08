@@ -21,11 +21,15 @@ urlpatterns = [
     path("produits/<int:pk>/modifier/", views.product_edit, name="product_edit"),
     path("produits/<int:pk>/supprimer/", views.product_delete, name="product_delete"),
     path("categories/", views.category_list, name="category_list"),
+    path("categories/<int:pk>/modifier/", views.category_edit, name="category_edit"),
     path(
         "categories/<int:pk>/supprimer/", views.category_delete, name="category_delete"
     ),
     path("mouvements/", views.movement_list, name="movement_list"),
     path("mouvements/nouveau/", views.movement_create, name="movement_create"),
+    path("mouvements/<int:pk>/modifier/", views.movement_edit, name="movement_edit"),
+    path("mouvements/<int:pk>/supprimer/", views.movement_delete, name="movement_delete"),
+    path("mouvements/<int:pk>/ticket/", views.movement_ticket, name="movement_ticket"),
     path("scanner/", views.scan, name="scan"),
     path("api/scan/", views.scan_api, name="scan_api"),
     path("api/scan/mouvement/", views.scan_movement_api, name="scan_movement_api"),

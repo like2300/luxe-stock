@@ -1,16 +1,187 @@
-{% load static %}<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Gestion de stock{% endblock %}</title>
-<link rel="stylesheet" href="{% static 'css/app.css' %}"></head>
-<body class="auth-body">
-<div class="auth-card">
-  <div class="auth-logo">STOCK</div>
-  <h2>{% block heading %}{% endblock %}</h2>
-  {% for m in messages %}<div class="alert {{ m.tags }}">{{ m }}</div>{% endfor %}
-  <form method="post">{% csrf_token %}
-    {% include "_form_fields.html" %}
-    <button class="btn btn-primary block" type="submit">{% block submit %}Valider{% endblock %}</button>
-  </form>
-  <p class="auth-alt">{% block alt %}{% endblock %}</p>
-  {% block google %}{% endblock %}
-</div></body></html>
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block page_title %}Stock{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { primary: '#2563eb', dark: '#0f172a' },
+                    fontFamily: { sans: ['Montserrat', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+
+    <!-- Font Awesome 6.4.0 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Alertes flottantes, identiques à celles de l'application -->
+    <link rel="stylesheet" href="{% static 'css/toasts.css' %}">
+</head>
+<body class="bg-gradient-to-br from-blue-300 via-blue-500 to-indigo-600 min-h-screen flex items-center justify-center p-4 font-sans antialiased">
+    <div class="w-full max-w-4xl bg-white rounded-xl shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2 min-h-[520px]">
+
+        <!-- Colonne de présentation -->
+        <div class="hidden md:flex bg-blue-600 text-white p-10 flex-col justify-between">
+            <div class="flex items-center gap-3">
+                <span class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"><i class="fa-solid fa-boxes-stacked"></i></span>
+                <span class="text-lg font-semibold tracking-wide">STOCK</span>
+            </div>
+
+            <div>
+                <div class="w-44 h-56 bg-white/10 rounded-lg p-5 backdrop-blur-sm border border-white/20 relative">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <p class="text-xs text-white/70">Total</p>
+                            <p class="text-2xl font-semibold">1 250</p>
+                        </div>
+                        <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                            <i class="fa-solid fa-arrow-trend-up"></i>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="h-3 bg-white/20 rounded-full w-full"></div>
+                        <div class="h-3 bg-white/30 rounded-full w-full"></div>
+                        <div class="h-3 bg-white/20 rounded-full w-5/6"></div>
+                    </div>
+                    <div class="absolute bottom-5 right-5 w-12 h-12 rounded-full bg-white/90 text-blue-600 flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-barcode"></i>
+                    </div>
+                </div>
+
+                <div id="auth-slides" class="mt-10" aria-live="polite">
+                    <div data-slide>
+                        <h2 class="text-2xl font-bold mb-4">Bienvenue&nbsp;!</h2>
+                        <p class="text-sm text-white/80 leading-relaxed">Gérez vos produits, vos mouvements de stock et vos alertes depuis un seul tableau de bord.</p>
+                    </div>
+                    <div data-slide class="hidden">
+                        <h2 class="text-2xl font-bold mb-4">Scannez vos codes-barres</h2>
+                        <p class="text-sm text-white/80 leading-relaxed">Le scanner reconnaît un code, ouvre la fiche produit et prépare le mouvement en une lecture.</p>
+                    </div>
+                    <div data-slide class="hidden">
+                        <h2 class="text-2xl font-bold mb-4">Gardez le contrôle</h2>
+                        <p class="text-sm text-white/80 leading-relaxed">Seuils d'alerte, ruptures et historique des mouvements&nbsp;: rien ne vous échappe.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-2" id="auth-dots">
+                <button type="button" data-dot class="w-3 h-3 rounded-full bg-white" aria-label="Slide 1"></button>
+                <button type="button" data-dot class="w-2.5 h-2.5 rounded-full border border-white bg-transparent" aria-label="Slide 2"></button>
+                <button type="button" data-dot class="w-2.5 h-2.5 rounded-full border border-white bg-transparent" aria-label="Slide 3"></button>
+            </div>
+        </div>
+
+        <!-- Colonne du formulaire -->
+        <div class="w-full p-8 sm:p-10 flex flex-col justify-center">
+            <div class="flex items-center gap-3 md:hidden mb-8">
+                <span class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center"><i class="fa-solid fa-boxes-stacked"></i></span>
+                <span class="text-lg font-semibold text-slate-800 tracking-wide">STOCK</span>
+            </div>
+
+            {% block heading %}
+            <h1 class="text-2xl font-bold text-gray-800 mb-6">{% block form_title %}Connexion{% endblock %}</h1>
+            {% endblock %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- File de toasts : mêmes alertes que dans l'application. -->
+    {% if messages %}
+    <div id="toast-queue" hidden>
+        {% for message in messages %}
+        <span data-toast="{{ message }}" data-toast-tone="{% if 'error' in message.tags %}error{% elif 'warning' in message.tags %}warning{% elif 'success' in message.tags %}success{% else %}info{% endif %}"></span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div id="toast-layer" class="toast-layer" role="region" aria-live="polite" aria-label="Alertes"></div>
+
+    <script src="{% static 'js/toasts.js' %}"></script>
+    <script>
+        // Afficher / masquer un mot de passe (boutons data-toggle-password).
+        (function () {
+            var toggles = document.querySelectorAll('[data-toggle-password]');
+            for (var i = 0; i < toggles.length; i++) {
+                toggles[i].addEventListener('click', function () {
+                    var input = document.getElementById(this.getAttribute('data-toggle-password'));
+                    if (!input) { return; }
+                    var hidden = input.type === 'password';
+                    input.type = hidden ? 'text' : 'password';
+                    var icon = this.querySelector('i');
+                    if (icon) {
+                        icon.className = (hidden ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye') + ' text-sm';
+                    }
+                });
+            }
+        })();
+    </script>
+    <script>
+        (function () {
+            var root = document.getElementById('auth-slides');
+            if (!root) { return; }
+            var slides = root.querySelectorAll('[data-slide]');
+            var dots = document.querySelectorAll('#auth-dots [data-dot]');
+            if (slides.length < 2) { return; }
+            var index = 0;
+            var timer = null;
+
+            function paint() {
+                for (var i = 0; i < slides.length; i++) {
+                    slides[i].classList.toggle('hidden', i !== index);
+                }
+                for (var j = 0; j < dots.length; j++) {
+                    var active = j === index;
+                    dots[j].classList.toggle('bg-white', active);
+                    dots[j].classList.toggle('w-3', active);
+                    dots[j].classList.toggle('h-3', active);
+                    dots[j].classList.toggle('bg-transparent', !active);
+                    dots[j].classList.toggle('border', !active);
+                    dots[j].classList.toggle('w-2.5', !active);
+                    dots[j].classList.toggle('h-2.5', !active);
+                }
+            }
+
+            function go(step) {
+                index = (index + step + slides.length) % slides.length;
+                paint();
+            }
+
+            function start() {
+                stop();
+                timer = setInterval(function () { go(1); }, 5000);
+            }
+
+            function stop() {
+                if (timer) { clearInterval(timer); timer = null; }
+            }
+
+            for (var k = 0; k < dots.length; k++) {
+                (function (dot, target) {
+                    dot.addEventListener('click', function () {
+                        index = target;
+                        paint();
+                        start();
+                    });
+                })(dots[k], k);
+            }
+
+            root.addEventListener('mouseenter', stop);
+            root.addEventListener('mouseleave', start);
+            root.addEventListener('focusin', stop);
+            root.addEventListener('focusout', start);
+            start();
+        })();
+    </script>
+</body>
+</html>

@@ -24,9 +24,20 @@
 
 <!-- Popup Nouvelle Catégorie -->
 {% if sp.can_manage_categories %}
-<div id="category-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-dark/50 backdrop-blur-sm" onclick="closeCategoryModal()"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-[fadeIn_.2s_ease-out]">
+<style>
+    /* La page défile dans <main> : la popup se centre dans la fenêtre, se
+       déroule à l'intérieur si elle dépasse, et le fond ne bouge plus. */
+    #category-modal { overscroll-behavior: contain; }
+    #category-modal .category-card {
+        max-height: calc(100vh - 2rem);
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+</style>
+<div id="category-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4">
+    <div class="fixed inset-0 bg-dark/50 backdrop-blur-sm" onclick="closeCategoryModal()"></div>
+    <div class="category-card relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 shrink-0 animate-[fadeIn_.2s_ease-out]">
         <div class="flex items-center justify-between mb-1">
             <h2 class="text-lg font-bold text-dark font-poppins">Nouvelle Catégorie</h2>
             <button type="button" onclick="closeCategoryModal()" class="text-slate-400 hover:text-rose-500 p-1.5 rounded-full hover:bg-rose-50 transition-colors" title="Fermer">
@@ -54,6 +65,45 @@
                 </button>
                 <button type="submit" class="px-5 py-2.5 rounded-lg text-white text-sm font-medium shadow-lg transition-all" style="background-color: var(--shop-primary);">
                     Ajouter
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Popup Modifier Catégorie : même gabarit que la création, action posée en JS. -->
+{% if sp.can_manage_categories %}
+<div id="category-edit-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4">
+    <div class="fixed inset-0 bg-dark/50 backdrop-blur-sm" onclick="closeCategoryEditModal()"></div>
+    <div class="category-card relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 shrink-0 animate-[fadeIn_.2s_ease-out]">
+        <div class="flex items-center justify-between mb-1">
+            <h2 class="text-lg font-bold text-dark font-poppins">Modifier la Catégorie</h2>
+            <button type="button" onclick="closeCategoryEditModal()" class="text-slate-400 hover:text-rose-500 p-1.5 rounded-full hover:bg-rose-50 transition-colors" title="Fermer">
+                <iconify-icon icon="solar:close-circle-linear" width="22"></iconify-icon>
+            </button>
+        </div>
+        <p class="text-sm text-slate-400 mb-5">Renommez la catégorie : vos produits la suivent automatiquement.</p>
+        <form method="post" id="category-edit-form">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-100 text-sm text-rose-700">
+                {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+            </div>
+            {% endif %}
+            <div class="relative w-full">
+                <iconify-icon icon="solar:tag-linear" class="absolute left-3 top-3 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="name" id="modifier-categorie" value="{{ form.name.value|default_if_none:'' }}" placeholder="Nom de la catégorie" class="pl-9 pr-4 py-2.5 w-full text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors">
+            </div>
+            {% if form.name.errors %}
+            <p class="mt-2 text-sm text-rose-600">{{ form.name.errors.0 }}</p>
+            {% endif %}
+            <div class="mt-6 flex justify-end gap-3">
+                <button type="button" onclick="closeCategoryEditModal()" class="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                    Annuler
+                </button>
+                <button type="submit" class="px-5 py-2.5 rounded-lg text-white text-sm font-medium shadow-lg transition-all" style="background-color: var(--shop-primary);">
+                    Enregistrer
                 </button>
             </div>
         </form>
@@ -89,6 +139,12 @@
                     <td class="px-6 py-4 text-right">
                         <div class="flex gap-2 justify-end">
                             {% if sp.can_manage_categories %}
+                            <button type="button" data-edit-category
+                                    data-url="{% url 'category_edit' category.pk %}"
+                                    data-name="{{ category.name }}" title="Modifier"
+                                    class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100">
+                                <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                            </button>
                             <form method="post" action="{% url 'category_delete' category.pk %}" class="inline" onsubmit="return confirm('Supprimer cette catégorie ?');">
                                 {% csrf_token %}
                                 <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
@@ -112,11 +168,19 @@
 
 {% block scripts %}
 <script>
+// <main> est le conteneur qui défile réellement : on bloque l'un et l'autre
+// pour que la popup reste collée au centre sans que l'arrière-plan bouge.
+function pageScroll(lock) {
+    var main = document.querySelector('main');
+    var value = lock ? 'hidden' : '';
+    if (main) main.style.overflow = value;
+    document.body.style.overflow = value;
+}
 function openCategoryModal() {
     var m = document.getElementById('category-modal');
     if (!m) return;
     m.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    pageScroll(true);
     setTimeout(function() {
         var inp = document.getElementById('nouvelle-categorie');
         if (inp) inp.focus();
@@ -126,12 +190,40 @@ function closeCategoryModal() {
     var m = document.getElementById('category-modal');
     if (!m) return;
     m.classList.add('hidden');
-    document.body.style.overflow = '';
+    pageScroll(false);
 }
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeCategoryModal();
+function openCategoryEditModal(url, name) {
+    var m = document.getElementById('category-edit-modal');
+    if (!m) return;
+    var form = document.getElementById('category-edit-form');
+    if (form && url) form.setAttribute('action', url);
+    var inp = document.getElementById('modifier-categorie');
+    if (inp && typeof name === 'string') inp.value = name;
+    m.classList.remove('hidden');
+    pageScroll(true);
+    setTimeout(function() { if (inp) inp.focus(); }, 50);
+}
+function closeCategoryEditModal() {
+    var m = document.getElementById('category-edit-modal');
+    if (!m) return;
+    m.classList.add('hidden');
+    pageScroll(false);
+}
+document.querySelectorAll('[data-edit-category]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        openCategoryEditModal(btn.getAttribute('data-url'), btn.getAttribute('data-name'));
+    });
 });
-{% if form.errors %}
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    closeCategoryModal();
+    closeCategoryEditModal();
+});
+{% if form.errors and edit_category %}
+document.addEventListener('DOMContentLoaded', function() {
+    openCategoryEditModal("{% url 'category_edit' edit_category.pk %}", "{{ form.name.value|default_if_none:edit_category.name|escapejs }}");
+});
+{% elif form.errors %}
 document.addEventListener('DOMContentLoaded', function() { openCategoryModal(); });
 {% endif %}
 </script>

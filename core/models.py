@@ -1,7 +1,10 @@
+import uuid as uuid_lib
+
 from django.contrib.auth.models import User
 from django.core.validators import RegexValidator
 from django.db import models, transaction
 from django.db.models import Q
+from django.utils import timezone
 from urllib.parse import quote
 
 hex_color = RegexValidator(r"^#[0-9a-fA-F]{6}$", "Couleur invalide (format #rrggbb).")
@@ -14,6 +17,9 @@ PERMISSIONS = [
     ("can_delete_products", "Supprimer des produits"),
     ("can_manage_stock", "Gérer le stock (entrées / sorties)"),
     ("can_manage_categories", "Gérer les catégories"),
+    ("can_manage_employees", "Gérer les employés"),
+    ("can_print_tickets", "Imprimer les tickets de caisse"),
+    ("can_manage_settings", "Gérer les paramètres de la boutique"),
 ]
 
 # kind de notification -> (libellé, code son, fréquence du bip en Hz)
@@ -34,7 +40,79 @@ LEVEL_COLORS = {
 }
 
 
-class Shop(models.Model):
+# ---------------------------------------------------------------------------
+# Support de la synchronisation hors ligne (voir docs/SYNC.md)
+# ---------------------------------------------------------------------------
+# L'uuid est généré par le client : il désigne la ligne avant même qu'elle
+# existe côté serveur, ce qui permet de créer et modifier des données hors ligne.
+# Les contraintes d'unicité restent indexed sur les lignes vivantes : une ligne
+# supprimée logiquement libère sa référence et son code-barres.
+
+class SyncFieldsMixin(models.Model):
+    """Identifiant stable et horodatage de modification."""
+
+    uuid = models.UUIDField("UUID", default=uuid_lib.uuid4, editable=False, unique=True)
+    updated_at = models.DateTimeField("Modifié le", auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class SoftDeleteQuerySet(models.QuerySet):
+    def hard_delete(self):
+        return super().delete()
+
+    def soft_delete(self):
+        return self.update(deleted_at=timezone.now(), updated_at=timezone.now())
+
+    def restore(self):
+        return self.update(deleted_at=None, updated_at=timezone.now())
+
+
+class LiveManager(models.Manager.from_queryset(SoftDeleteQuerySet)):
+    """Manager par défaut : les lignes supprimées logiquement sont masquées.
+
+    Défini en premier, il devient le `_default_manager` du modèle, donc aussi
+    celui des managers liés (shop.products, product.movements...). Le web et
+    l'API voient ainsi exactement la même liste.
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
+class SoftDeleteMixin(SyncFieldsMixin):
+    """Suppression logique : la ligne quitte les listes mais reste synchronisable.
+
+    `deleted_at` permet à un autre appareil d'apprendre la suppression par
+    synchronisation incrémentale, ce qu'une suppression physique rendrait
+    impossible.
+    """
+
+    deleted_at = models.DateTimeField("Supprimé le", null=True, blank=True, db_index=True)
+
+    objects = LiveManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        abstract = True
+
+    @property
+    def is_deleted(self):
+        return self.deleted_at is not None
+
+    def soft_delete(self):
+        self.deleted_at = timezone.now()
+        self.save(update_fields=["deleted_at", "updated_at"])
+        return self
+
+    def restore(self):
+        self.deleted_at = None
+        self.save(update_fields=["deleted_at", "updated_at"])
+        return self
+
+
+class Shop(SyncFieldsMixin, models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="shops")
     name = models.CharField("Nom de la boutique", max_length=120)
     address = models.CharField("Adresse", max_length=200, blank=True)
@@ -78,11 +156,15 @@ class Shop(models.Model):
 
     @property
     def favicon_url(self):
-        """URL du favicon : l'image envoyee, sinon les initiales en SVG.
+        """URL du favicon : le logo de la societe, une icone envoyee, ou les initiales.
 
-        Evite une requete vers /favicon.ico qui repondrait 404 pour une
-        boutique sans icône personnalisee.
+        L'icone de l'onglet suit automatiquement le logo de la societe : aucune
+        manipulation n'est demandee dans les parametres. Une icone envoyee par
+        le passe (administration) reste utilisee a defaut de logo. Sans image,
+        un SVG d'initiales evite une requete vers /favicon.ico qui repondrait 404.
         """
+        if self.logo:
+            return self.logo.url
         if self.favicon:
             return self.favicon.url
         svg = (
@@ -95,7 +177,7 @@ class Shop(models.Model):
         return "data:image/svg+xml," + quote(svg, safe="")
 
 
-class Membership(models.Model):
+class Membership(SyncFieldsMixin, models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="membership")
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="members")
     is_owner = models.BooleanField(default=False)
@@ -105,6 +187,11 @@ class Membership(models.Model):
     can_delete_products = models.BooleanField(default=False)
     can_manage_stock = models.BooleanField(default=False)
     can_manage_categories = models.BooleanField(default=False)
+    can_manage_employees = models.BooleanField(default=False)
+    # Autorise l'impression des tickets de caisse : conservee par defaut pour
+    # les employes deja crees, et proposee cochee a la creation d'un compte.
+    can_print_tickets = models.BooleanField(default=True)
+    can_manage_settings = models.BooleanField(default=False)
 
     def has(self, perm):
         return self.is_owner or bool(getattr(self, perm, False))
@@ -113,7 +200,7 @@ class Membership(models.Model):
         return f"{self.user} @ {self.shop}"
 
 
-class Profile(models.Model):
+class Profile(SyncFieldsMixin, models.Model):
     """Photo et informations complementaires de l'utilisateur connecte.
 
     La photo est facultative : l'interface affiche alors les initiales
@@ -124,7 +211,6 @@ class Profile(models.Model):
     photo = models.ImageField("Photo de profil", upload_to="profiles/", blank=True, null=True)
     phone = models.CharField("Téléphone", max_length=40, blank=True)
     bio = models.CharField("Bio", max_length=200, blank=True)
-    updated_at = models.DateTimeField("Modifié le", auto_now=True)
 
     class Meta:
         verbose_name = "Profil"
@@ -134,20 +220,29 @@ class Profile(models.Model):
         return f"Profil de {self.user}"
 
 
-class Category(models.Model):
+class Category(SoftDeleteMixin, models.Model):
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="categories")
     name = models.CharField("Nom", max_length=80)
 
     class Meta:
         ordering = ["name"]
-        unique_together = ("shop", "name")
         verbose_name_plural = "catégories"
+        constraints = [
+            # Un nom est unique parmi les catégories vivantes de la boutique.
+            # Une catégorie supprimée logiquement libère son nom : on peut la
+            # recréer, et la synchronisation propage les deux événements.
+            models.UniqueConstraint(
+                fields=["shop", "name"],
+                condition=Q(deleted_at__isnull=True),
+                name="uniq_category_name_per_shop_live",
+            )
+        ]
 
     def __str__(self):
         return self.name
 
 
-class Product(models.Model):
+class Product(SoftDeleteMixin, models.Model):
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="products")
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="products", verbose_name="Catégorie")
     name = models.CharField("Nom du produit", max_length=150)
@@ -162,15 +257,20 @@ class Product(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        unique_together = ("shop", "sku")
         constraints = [
+            # Une référence est unique parmi les produits vivants de la boutique.
+            models.UniqueConstraint(
+                fields=["shop", "sku"],
+                condition=Q(deleted_at__isnull=True),
+                name="uniq_sku_per_shop_live",
+            ),
             # Un code-barres est unique dans une boutique, mais facultatif :
             # sans condition, plusieurs produits sans code seraient refusés.
             models.UniqueConstraint(
                 fields=["shop", "barcode"],
-                condition=~Q(barcode=""),
-                name="uniq_barcode_per_shop",
-            )
+                condition=~Q(barcode="") & Q(deleted_at__isnull=True),
+                name="uniq_barcode_per_shop_live",
+            ),
         ]
 
     def __str__(self):
@@ -200,7 +300,7 @@ class Product(models.Model):
         super().save(*args, **kwargs)
 
 
-class Notification(models.Model):
+class Notification(SoftDeleteMixin, models.Model):
     PRODUCT_ADDED = "ADDED"
     STOCK_IN = "IN"
     STOCK_OUT = "OUT"
@@ -247,7 +347,7 @@ class Notification(models.Model):
         return NOTIFICATION_KINDS.get(self.kind, ("", "BIP", 880))[2]
 
 
-class StockMovement(models.Model):
+class StockMovement(SoftDeleteMixin, models.Model):
     IN, OUT = "IN", "OUT"
     KINDS = [(IN, "Entrée"), (OUT, "Sortie")]
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="movements", verbose_name="Produit")
