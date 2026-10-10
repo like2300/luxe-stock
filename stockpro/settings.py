@@ -9,7 +9,7 @@ SECRET_KEY = 'django-insecure-5l7(@gkzyx(r6uz(wo=dm9h%t-7(!drn^v+qdk-9+!*or&=!+1
 DEBUG = True
 ALLOWED_HOSTS = [
     host.strip()
-    for host in config('ALLOWED_HOSTS', default='').split(',')
+    for host in config('ALLOWED_HOSTS', default='haram.alwaysdata.net').split(',')
     if host.strip()
 ]
 
@@ -42,6 +42,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+"whitenoise.middleware.WhiteNoiseMiddleware", 
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -211,3 +212,7 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "static"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
