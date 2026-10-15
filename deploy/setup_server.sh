@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Preparation d'un serveur Ubuntu (22.04 / 24.04) pour l'application StockPro.
+# PREPARATION D'UN VPS (Ubuntu 22.04 / 24.04) UNIQUEMENT.
 #
-# A executer UNE FOIS, en root, sur un serveur neuf :
+# !! NE PAS utiliser sur alwaysdata (ou tout autre PaaS / hebergement
+#    mutualise) : il n'y a pas de root. Sur alwaysdata, utilise :
+#        bash deploy/deploy_alwaysdata.sh
+#
+# A executer UNE FOIS, en root, sur un serveur VPS neuf :
 #     sudo bash deploy/setup_server.sh
 #
 # Ce script :

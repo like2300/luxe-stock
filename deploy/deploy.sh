@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Deploiement / mise a jour de StockPro.
+# Deploiement / mise a jour de StockPro sur un VPS (systemd + Gunicorn).
+#
+# !! Sur alwaysdata (PaaS), utiliser plutot : bash deploy/deploy_alwaysdata.sh
 #
 # A executer a la racine du projet, en tant que l'utilisateur NON-ROOT de
 # l'application (voir deploy/setup_server.sh) :
