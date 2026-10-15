@@ -5,12 +5,21 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-5l7(@gkzyx(r6uz(wo=dm9h%t-7(!drn^v+qdk-9+!*or&=!+1'
-DEBUG = True
+SECRET_KEY = config(
+    'SECRET_KEY',
+    default='django-insecure-5l7(@gkzyx(r6uz(wo=dm9h%t-7(!drn^v+qdk-9+!*or&=!+1',
+)
+DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = [
     host.strip()
     for host in config('ALLOWED_HOSTS', default='haram.alwaysdata.net').split(',')
     if host.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in config('CSRF_TRUSTED_ORIGINS', default='').split(',')
+    if origin.strip()
 ]
 
 INSTALLED_APPS = [
@@ -213,6 +222,34 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "static"
+# Dossier de collecte des fichiers statiques pour la production (servi par
+# WhiteNoise). Ignore par git et regenere par « collectstatic ».
+STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# WhiteNoise compresse et fait le cache-busting des fichiers statiques.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# --- Securite en production (activees uniquement quand DEBUG = False) ---
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=True, cast=bool)
+    CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=True, cast=bool)
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=31536000, cast=int)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
+
+# Taille maximale des fichiers envoyes (logos, photos de profil) : 5 Mo.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024

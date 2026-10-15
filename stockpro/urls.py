@@ -1,8 +1,8 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as media_serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from core import views as core_views
@@ -49,4 +49,7 @@ urlpatterns = [
         name="api-docs",
     ),
     path("", include("core.urls")),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Sans Nginx, les fichiers medias (logos, photos) sont servis par Django.
+    # WhiteNoise se charge des fichiers statiques (STATIC_ROOT).
+    re_path(r"^media/(?P<path>.*)$", media_serve, {"document_root": settings.MEDIA_ROOT}),
+]

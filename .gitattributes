@@ -1,0 +1,21 @@
+# Normalise les fins de ligne : les scripts shell et services doivent rester
+# en LF pour fonctionner sur Linux, meme quand on developpe sous Windows.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.service.template text eol=lf
+*.conf.py text eol=lf
+*.sql   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
