@@ -37,4 +37,5 @@ signup_get.html
 
 # Sorties de tests/debug a la racine (ne pas commiter)
 /*.txt
+!requirements.txt
 /*.tmp
