@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load l10n %}
 {% block page_title %}Mouvements de Stock — {{ shop.document_title }}{% endblock %}
 {% block breadcrumbs %}
     <span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
@@ -128,6 +129,123 @@
         </div>
     </div>
 </div>
+
+<!-- Fenêtre de livraison : s'ouvre après une sortie dont le montant atteint le minimum. -->
+{% if delivery_form %}
+<div id="delivery-modal" class="fixed inset-0 z-[80] overflow-y-auto">
+    <div class="absolute inset-0 bg-dark/40 backdrop-blur-sm"></div>
+    <div class="relative min-h-full flex items-start sm:items-center justify-center p-3 sm:p-4">
+        <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl my-3 sm:my-6">
+            <div class="flex items-start justify-between gap-4 p-5 sm:p-6 border-b border-slate-100">
+                <div class="flex items-start gap-3 min-w-0">
+                    <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                        <iconify-icon icon="solar:delivery-bold" width="22"></iconify-icon>
+                    </span>
+                    <div class="min-w-0">
+                        <h2 class="font-bold text-dark">Sortie éligible à la livraison</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            {{ deliver_movement.product.name }} — {{ deliver_movement.quantity }} ×
+                            {{ deliver_movement.product.sale_price|floatformat:0 }} {{ shop.currency }}
+                            = <span class="font-semibold text-dark">{{ deliver_total|floatformat:0 }} {{ shop.currency }}</span>
+                        </p>
+                    </div>
+                </div>
+                <a href="{% url 'movement_list' %}" class="text-slate-400 hover:text-slate-600 transition-colors p-1.5 rounded-full hover:bg-slate-100 shrink-0" title="Fermer">
+                    <iconify-icon icon="solar:close-circle-linear" width="22"></iconify-icon>
+                </a>
+            </div>
+
+            <form method="post" action="{% url 'movement_delivery' deliver_movement.pk %}" class="p-5 sm:p-6 space-y-5">
+                {% csrf_token %}
+                <p class="text-sm text-slate-500">
+                    Enregistrez la livraison du client : nom, téléphone et arrondissement suffisent.
+                </p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Nom du client *</label>
+                        {{ delivery_form.name }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Téléphone</label>
+                        {{ delivery_form.phone }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Arrondissement / Département *</label>
+                        {{ delivery_form.zone }}
+                        <p class="mt-1.5 text-xs text-slate-400">Hors Brazzaville : saisissez le montant à la main.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Adresse de livraison</label>
+                        {{ delivery_form.address }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Date de livraison</label>
+                        {{ delivery_form.scheduled_for }}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Prix de la livraison</label>
+                        {{ delivery_form.fee }}
+                        <p id="dm-manual-hint" class="mt-1.5 text-xs text-amber-600 hidden">Hors Brazzaville : saisissez le montant manuellement.</p>
+                        <p id="dm-free-hint" class="mt-1.5 text-xs text-emerald-600 hidden">Livraison offerte : le montant de la sortie atteint le seuil.</p>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">Note</label>
+                        {{ delivery_form.note }}
+                    </div>
+                </div>
+
+                <div class="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
+                    <a href="{% url 'movement_list' %}" class="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all text-center">Plus tard</a>
+                    <button type="submit" class="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all">
+                        Enregistrer la livraison
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var root = document.getElementById('delivery-modal');
+    if (!root) return;
+    var zone = root.querySelector('select[name="zone"]');
+    var fee = root.querySelector('input[name="fee"]');
+    var manualHint = document.getElementById('dm-manual-hint');
+    var freeHint = document.getElementById('dm-free-hint');
+    var total = parseFloat('{{ deliver_total|unlocalize }}') || 0;
+    var threshold = parseFloat('{{ shop.delivery_free_threshold|unlocalize }}') || 0;
+
+    function applyZone() {
+        if (!zone || !fee) return;
+        var opt = zone.options[zone.selectedIndex];
+        var manual = opt && opt.dataset.manual === '1';
+        if (manual) {
+            manualHint.classList.remove('hidden');
+            freeHint.classList.add('hidden');
+            fee.readOnly = false;
+            fee.value = '';
+            fee.placeholder = 'Saisir le montant (hors Brazzaville)';
+        } else {
+            manualHint.classList.add('hidden');
+            if (threshold > 0 && total >= threshold) {
+                fee.value = '0';
+                fee.readOnly = true;
+                freeHint.classList.remove('hidden');
+            } else {
+                fee.readOnly = true;
+                if (opt) fee.value = opt.dataset.fee || '0';
+                freeHint.classList.add('hidden');
+            }
+        }
+    }
+    if (zone) {
+        zone.addEventListener('change', applyZone);
+        applyZone();
+    }
+});
+</script>
+{% endif %}
 
 <!-- Script JavaScript pour la recherche et les filtres dynamiques -->
 <script>

@@ -1,0 +1,118 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facture {{ invoice.reference }} — {{ shop.name }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #e2e8f0; color: #0f172a; font-family: 'Montserrat', Arial, sans-serif; font-size: 12px; line-height: 1.45; }
+        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 18px; }
+        .toolbar button, .toolbar a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+        .toolbar .back { background: #fff; border: 1px solid #cbd5e1; color: #334155; }
+        .toolbar .print { background: {{ shop.primary_color }}; border: 1px solid {{ shop.primary_color }}; color: #fff; }
+        .ticket { width: 80mm; margin: 0 auto 32px; padding: 7mm 6mm; background: #fff; box-shadow: 0 18px 45px rgba(15,23,42,.16); }
+        .center { text-align: center; }
+        .logo { display: block; width: 16mm; height: 16mm; margin: 0 auto 6px; border-radius: 3mm; object-fit: cover; }
+        .logo-fallback { display: flex; align-items: center; justify-content: center; width: 16mm; height: 16mm; margin: 0 auto 6px; border-radius: 3mm; background: {{ shop.primary_color }}; color: #fff; font-size: 18px; font-weight: 700; }
+        .shop-name { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+        .shop-meta { font-size: 10.5px; color: #475569; }
+        hr.rule { border: 0; border-top: 1px dashed #94a3b8; margin: 7px 0; }
+        .ticket-title { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+        .ticket-meta { font-size: 10.5px; color: #475569; }
+        .item-name { font-weight: 600; }
+        .item-meta { font-size: 10.5px; color: #64748b; }
+        .row { display: flex; justify-content: space-between; gap: 8px; }
+        .row .right { text-align: right; white-space: nowrap; }
+        .qty-line { color: #334155; }
+        .total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 700; }
+        .total .label { letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+        .thanks { margin-top: 8px; font-size: 11px; font-weight: 600; text-align: center; }
+        .footer { margin-top: 6px; font-size: 9.5px; color: #94a3b8; text-align: center; }
+        @page { size: 80mm auto; margin: 0; }
+        @media print {
+            body { background: #fff; }
+            .toolbar { display: none !important; }
+            .ticket { width: 80mm; max-width: 80mm; margin: 0; padding: 4mm; box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="toolbar">
+    <a class="back" href="{% url 'invoice_list' %}">&#8592;&nbsp; Retour aux factures</a>
+    <button type="button" class="print" onclick="window.print()">&#128424;&nbsp; Imprimer</button>
+</div>
+<div class="ticket">
+    <div class="center">
+        {% if shop.logo %}
+            <img class="logo" src="{{ shop.logo.url }}" alt="Logo {{ shop.name }}">
+        {% else %}
+            <div class="logo-fallback">{{ shop.initials }}</div>
+        {% endif %}
+        <div class="shop-name">{{ shop.name }}</div>
+        {% if shop.address %}<div class="shop-meta">{{ shop.address }}</div>{% endif %}
+        {% if shop.phone %}<div class="shop-meta">Tél. {{ shop.phone }}</div>{% endif %}
+    </div>
+    <hr class="rule">
+    <div class="center ticket-title">Facture</div>
+    <div class="row ticket-meta">
+        <span>Réf. {{ invoice.reference }}</span>
+        <span>{{ invoice.created_at|date:"d/m/Y H:i" }}</span>
+    </div>
+    <div class="ticket-meta center">
+        {% if invoice.customer %}
+        Client : {{ invoice.customer.name }}
+        {% if invoice.customer.phone %}<br>{{ invoice.customer.phone }}{% endif %}
+        {% else %}
+        Client anonyme
+        {% endif %}
+    </div>
+    {% if invoice.customer.address %}
+    <div class="ticket-meta center">Adresse : {{ invoice.customer.address }}</div>
+    {% endif %}
+    {% if invoice.deliveries.all %}
+    <hr class="rule">
+    <div class="center ticket-meta">Livraison</div>
+    {% for d in invoice.deliveries.all %}
+    <div class="row ticket-meta">
+        <span>{% if d.zone %}{{ d.zone.name }}{% else %}{{ d.address }}{% endif %}</span>
+        <span class="right">{% if d.fee == 0 %}Offerte{% else %}{{ d.fee|floatformat:0 }} {{ currency }}{% endif %}</span>
+    </div>
+    {% if d.zone and d.address and d.address != d.zone.name %}
+    <div class="row ticket-meta"><span>{{ d.address }}</span></div>
+    {% endif %}
+    {% endfor %}
+    {% elif invoice.customer.free_delivery %}
+    <div class="row ticket-meta">
+        <span>Livraison</span>
+        <span class="right">Offerte (seuil atteint)</span>
+    </div>
+    {% endif %}
+    <hr class="rule">
+    {% for line in lines %}
+    <div class="row">
+        <span>
+            <span class="item-name">{{ line.product.name }}</span>
+            {% if line.product.sku %}<br><span class="item-meta">Réf. {{ line.product.sku }}</span>{% endif %}
+        </span>
+        <span class="right item-name">{{ line.line_total|floatformat:0 }} {{ currency }}</span>
+    </div>
+    <div class="row qty-line">
+        <span>{{ line.quantity }} × {{ line.unit_price|floatformat:0 }} {{ currency }}</span>
+    </div>
+    {% endfor %}
+    <hr class="rule">
+    <div class="total">
+        <span class="label">Total</span>
+        <span>{{ total|floatformat:0 }} {{ currency }}</span>
+    </div>
+    {% if invoice.note %}
+    <div style="margin-top:7px;font-size:11px;color:#334155;">{{ invoice.note }}</div>
+    {% endif %}
+    <div class="thanks">Merci de votre visite !</div>
+    <div class="footer">Vendu par {{ invoice.user.username|default:"—" }} · STOCK</div>
+</div>
+</body>
+</html>

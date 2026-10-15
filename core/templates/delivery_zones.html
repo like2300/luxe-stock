@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block page_title %}Zones de livraison — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<a href="{% url 'delivery_list' %}" class="hover:text-primary transition-colors">Livraisons</a>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Zones de livraison</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Zones de livraison</h1>
+        <p class="text-slate-500">Les arrondissements s'enregistrent à l'avance avec leur tarif. « Hors Brazzaville » se saisit à la main.</p>
+    </div>
+    <a href="{% url 'delivery_list' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+        <iconify-icon icon="solar:arrow-left-linear" width="16"></iconify-icon>
+        <span>Retour aux livraisons</span>
+    </a>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="bg-white rounded-2xl border border-slate-50 shadow-sm p-6 xl:col-span-1">
+        <h2 class="font-bold text-dark mb-1">Nouvelle zone</h2>
+        <p class="text-xs text-slate-400 mb-5">Nom et tarif appliqués automatiquement.</p>
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            {% for field in form %}
+            <div>
+                {% if field.field.widget.input_type == "checkbox" %}
+                <label class="flex items-center gap-3 cursor-pointer select-none">
+                    {{ field }}
+                    <span class="text-sm font-medium text-slate-700">{{ field.label }}</span>
+                </label>
+                {% else %}
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ field.label }}</label>
+                {{ field }}
+                {% endif %}
+                {% if field.help_text %}<p class="mt-1 text-xs text-slate-400">{{ field.help_text }}</p>{% endif %}
+                {% if field.errors %}<p class="mt-1 text-sm text-rose-600">{{ field.errors.0 }}</p>{% endif %}
+            </div>
+            {% endfor %}
+            <button type="submit" class="w-full px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all">
+                Ajouter la zone
+            </button>
+        </form>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-slate-50 shadow-sm overflow-hidden xl:col-span-2">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                    <tr>
+                        <th class="px-6 py-4">Zone</th>
+                        <th class="px-6 py-4 text-right">Tarif</th>
+                        <th class="px-6 py-4">Mode</th>
+                        <th class="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for z in zones %}
+                    <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-colors">
+                        <td class="px-6 py-4 font-medium text-dark">{{ z.name }}</td>
+                        <td class="px-6 py-4 text-right font-semibold">
+                            {% if z.is_manual %}<span class="text-slate-400">Manuel</span>{% else %}{{ z.fee|floatformat:0 }} {{ shop.currency }}{% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if z.is_manual %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Saisie manuelle</span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Tarif fixe</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex gap-2 justify-end">
+                                <a href="{% url 'delivery_zone_edit' z.pk %}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Modifier">
+                                    <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                                </a>
+                                <form method="post" action="{% url 'delivery_zone_delete' z.pk %}" onsubmit="return confirm('Supprimer cette zone ?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                        <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="px-6 py-4 text-center text-slate-400">Aucune zone.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

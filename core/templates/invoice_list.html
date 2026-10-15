@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block page_title %}Factures — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Factures</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Liste des Factures</h1>
+        <p class="text-slate-500">Les produits achetés sortent du stock ; le cumul du client décide de sa livraison.</p>
+    </div>
+    <a href="{% url 'invoice_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+        <iconify-icon icon="solar:document-add-linear" width="18"></iconify-icon>
+        <span>Nouvelle Facture</span>
+    </a>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <div class="p-6 border-b border-slate-50">
+        <form method="get" class="flex flex-col sm:flex-row gap-3 w-full sm:w-96">
+            <div class="relative w-full">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="q" value="{{ q }}" placeholder="Rechercher une facture (référence, client)..." class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
+            </div>
+            <button type="submit" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:opacity-90 transition-opacity shrink-0">
+                <iconify-icon icon="solar:magnifier-linear" width="16"></iconify-icon>
+                <span>Rechercher</span>
+            </button>
+        </form>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Référence</th>
+                    <th class="px-6 py-4">Client</th>
+                    <th class="px-6 py-4">Produits</th>
+                    <th class="px-6 py-4 text-right">Total</th>
+                    <th class="px-6 py-4">Date</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in page %}
+                <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                    <td class="px-6 py-4 font-semibold text-primary">{{ row.invoice.reference }}</td>
+                    <td class="px-6 py-4">
+                        {% if row.invoice.customer %}
+                        {{ row.invoice.customer.name }}
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Anonyme</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">{{ row.n_items }} article{% if row.n_items != 1 %}s{% endif %}</td>
+                    <td class="px-6 py-4 text-right font-semibold text-dark">{{ row.total|floatformat:0 }} {{ shop.currency }}</td>
+                    <td class="px-6 py-4">{{ row.invoice.created_at|date:"d/m/Y H:i" }}</td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex gap-2 justify-end">
+                            <a href="{% url 'delivery_create' %}?facture={{ row.invoice.pk }}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Enregistrer une livraison pour cette facture">
+                                <iconify-icon icon="solar:delivery-linear" width="18"></iconify-icon>
+                            </a>
+                            <a href="{% url 'invoice_ticket' row.invoice.pk %}" target="_blank" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Imprimer la facture">
+                                <iconify-icon icon="solar:printer-minimalistic-linear" width="18"></iconify-icon>
+                            </a>
+                            <form method="post" action="{% url 'invoice_delete' row.invoice.pk %}" class="inline" onsubmit="return confirm('Supprimer cette facture ? Le stock sera recalculé.');">
+                                {% csrf_token %}
+                                <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="px-6 py-4 text-center text-slate-400">Aucune facture.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page.paginator.num_pages > 1 %}
+    <div class="p-4 border-t border-slate-50 flex items-center justify-between">
+        <p class="text-xs text-slate-400">Page {{ page.number }} / {{ page.paginator.num_pages }}</p>
+        <div class="flex gap-2">
+            {% if page.has_previous %}
+            <a href="?page={{ page.previous_page_number }}{% if q %}&q={{ q }}{% endif %}" class="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">Précédent</a>
+            {% endif %}
+            {% if page.has_next %}
+            <a href="?page={{ page.next_page_number }}{% if q %}&q={{ q }}{% endif %}" class="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">Suivant</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

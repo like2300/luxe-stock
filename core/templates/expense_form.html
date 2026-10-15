@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block page_title %}Nouvelle dépense — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<a href="{% url 'finance' %}" class="hover:text-primary transition-colors">Finance</a>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Nouvelle dépense</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Nouvelle dépense</h1>
+        <p class="text-slate-500">Enregistrer un loyer, salaire, transport, fournisseur ou autre dépense. Elle réduit le bénéfice net.</p>
+    </div>
+    <a href="{% url 'finance' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+        <iconify-icon icon="solar:arrow-left-linear" width="16"></iconify-icon>
+        <span>Retour à la finance</span>
+    </a>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-8">
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for field in form %}
+            <div class="{% if field.field.widget.input_type == 'textarea' %}md:col-span-2{% elif field.name == 'label' %}md:col-span-2{% endif %}">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="mt-1.5 text-xs text-slate-400">{{ field.help_text }}</p>{% endif %}
+                {% for e in field.errors %}<p class="mt-1.5 text-sm text-rose-600">{{ e }}</p>{% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="flex justify-end gap-3">
+            <a href="{% url 'finance' %}" class="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">Annuler</a>
+            <button type="submit" class="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">Enregistrer</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,5 +1,6 @@
 import json
 import logging
+from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth import login
@@ -8,8 +9,16 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
-from django.db.models.functions import TruncMonth
+from django.db.models import (
+    Count,
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    Q,
+    Sum,
+    Value,
+)
+from django.db.models.functions import Coalesce, TruncMonth
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -21,7 +30,13 @@ from .avatar import avatar_data, ensure_profile, get_profile
 from .decorators import owner_required, perm_required, scanner_required, shop_required
 from .forms import (
     CategoryForm,
+    CustomerForm,
+    DeliveryForm,
+    DeliveryZoneForm,
     EmployeeForm,
+    ExpenseForm,
+    InvoiceHeaderForm,
+    InvoiceLineFormSet,
     MovementForm,
     ProductForm,
     ProfileForm,
@@ -32,11 +47,19 @@ from .forms import (
 from .models import (
     PERMISSIONS,
     Category,
+    Customer,
+    Delivery,
+    DeliveryZone,
+    Expense,
+    Invoice,
+    InvoiceLine,
     Membership,
     Notification,
     Product,
     Shop,
     StockMovement,
+    compute_delivery_fee,
+    ensure_default_delivery_zones,
     notify_threshold_crossing,
     push_notification,
     record_adjustment,
@@ -125,6 +148,7 @@ def create_shop(request):
             shop.owner = request.user
             shop.save()
             Membership.objects.create(user=request.user, shop=shop, is_owner=True)
+            ensure_default_delivery_zones(shop)
         messages.success(
             request, "Votre boutique est prête. Ajoutez vos premiers produits !"
         )
@@ -543,6 +567,23 @@ def movement_list(request):
     page = Paginator(qs, 15).get_page(request.GET.get("page"))
     params = request.GET.copy()
     params.pop("page", None)
+
+    # Sortie fraîchement enregistrée et éligible : on prépare la fenêtre de livraison.
+    deliver_movement = None
+    delivery_form = None
+    livrer = request.GET.get("livrer", "")
+    if livrer.isdigit() and request.membership.has("can_manage_deliveries"):
+        deliver_movement = (
+            StockMovement.objects.filter(
+                pk=livrer, product__shop=request.shop, kind=StockMovement.OUT
+            )
+            .select_related("product")
+            .first()
+        )
+        if deliver_movement:
+            ensure_default_delivery_zones(request.shop)
+            delivery_form = DeliveryForm(shop=request.shop, movement=deliver_movement)
+
     return render(
         request,
         "movement_list.html",
@@ -553,6 +594,12 @@ def movement_list(request):
             "kind": kind,
             "product_id": product_id,
             "qs": params.urlencode(),
+            "deliver_movement": deliver_movement,
+            "delivery_form": delivery_form,
+            "deliver_total": (
+                deliver_movement.product.sale_price * deliver_movement.quantity
+                if deliver_movement else 0
+            ),
         },
     )
 
@@ -618,6 +665,15 @@ def movement_create(request):
         # Une sortie est une vente : on ouvre le ticket de caisse en auto-impression
         # si l'employe a le droit d'imprimer (sinon l'historique suffit).
         if kind == StockMovement.OUT:
+            # Sortie éligible à la livraison : on propose d'enregistrer le client
+            # et la zone dans une fenêtre, au lieu du ticket automatique.
+            amount = p.sale_price * cd["quantity"]
+            min_amount = request.shop.delivery_min_amount
+            if (
+                min_amount and min_amount > 0 and amount >= min_amount
+                and request.membership.has("can_manage_deliveries")
+            ):
+                return redirect(reverse("movement_list") + f"?livrer={mv.pk}")
             if request.membership.has("can_print_tickets"):
                 return redirect(reverse("movement_ticket", args=[mv.pk]) + "?auto=1")
             return redirect("movement_list")
@@ -1253,3 +1309,618 @@ def profile_photo_delete(request):
         profile.photo.delete(save=False)
         profile.save(update_fields=["photo", "updated_at"])
     return JsonResponse(_profile_payload(request.user, request.membership))
+
+
+# ---------- Finance (propriétaire) ----------
+def finance_history(shop, months=6):
+    """Series mensuelles : ventes, coût, dépenses, revenu livraisons, profit."""
+    first = timezone.now().date().replace(day=1)
+    periods = []
+    year, month = first.year, first.month
+    for _ in range(months):
+        periods.append((year, month))
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    periods.reverse()
+    starts = [timezone.datetime(year, month, 1) for year, month in periods]
+    end = (starts[-1] + timezone.timedelta(days=32)).replace(day=1)
+
+    outs = (
+        StockMovement.objects.filter(
+            product__shop=shop,
+            kind=StockMovement.OUT,
+            created_at__gte=starts[0],
+            created_at__lt=end,
+        )
+        .annotate(month=TruncMonth("created_at"))
+        .values("month")
+        .annotate(
+            revenue=Coalesce(Sum(ExpressionWrapper(
+                F("quantity") * F("product__sale_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )), Value(Decimal("0"))),
+            cogs=Coalesce(Sum(ExpressionWrapper(
+                F("quantity") * F("product__cost_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )), Value(Decimal("0"))),
+        )
+    )
+    per_month = {row["month"].date(): row for row in outs}
+
+    exp_rows = (
+        shop.expenses.filter(spent_at__gte=starts[0].date(), spent_at__lt=end.date())
+        .annotate(month=TruncMonth("spent_at"))
+        .values("month")
+        .annotate(expenses=Coalesce(Sum("amount"), Value(Decimal("0"))))
+    )
+    exp_by_month = {row["month"].date(): row["expenses"] for row in exp_rows}
+
+    del_rows = (
+        shop.deliveries.exclude(status=Delivery.CANCELLED)
+        .filter(created_at__gte=starts[0], created_at__lt=end)
+        .annotate(month=TruncMonth("created_at"))
+        .values("month")
+        .annotate(delivery=Coalesce(Sum("fee"), Value(Decimal("0"))))
+    )
+    del_by_month = {row["month"].date(): row["delivery"] for row in del_rows}
+
+    labels, revenue, cogs, expenses, delivery, profit = [], [], [], [], [], []
+    for (year, month), start in zip(periods, starts):
+        row = per_month.get(start.date(), {})
+        rev = row.get("revenue") or Decimal("0")
+        cog = row.get("cogs") or Decimal("0")
+        exp = Decimal(exp_by_month.get(start.date(), "0"))
+        dlv = Decimal(del_by_month.get(start.date(), "0"))
+        labels.append(f"{MONTHS_FR[month]} {year}")
+        revenue.append(float(rev))
+        cogs.append(float(cog))
+        expenses.append(float(exp))
+        delivery.append(float(dlv))
+        profit.append(float(rev - cog - exp + dlv))
+    return {
+        "labels": labels,
+        "revenue": revenue,
+        "cogs": cogs,
+        "expenses": expenses,
+        "delivery": delivery,
+        "profit": profit,
+    }
+
+
+@owner_required
+def finance(request):
+    """Finance : ventes, bénéfice, dépenses et valeur du stock, réservé au propriétaire."""
+    shop = request.shop
+    outs = StockMovement.objects.filter(product__shop=shop, kind=StockMovement.OUT)
+    totals = outs.aggregate(
+        revenue=Coalesce(Sum(ExpressionWrapper(
+            F("quantity") * F("product__sale_price"),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        )), Value(Decimal("0"))),
+        cogs=Coalesce(Sum(ExpressionWrapper(
+            F("quantity") * F("product__cost_price"),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        )), Value(Decimal("0"))),
+    )
+    revenue, cogs = totals["revenue"], totals["cogs"]
+    delivery_income = shop.deliveries.exclude(status=Delivery.CANCELLED).aggregate(
+        t=Coalesce(Sum("fee"), Value(Decimal("0")))
+    )["t"]
+    expenses = shop.expenses.aggregate(t=Coalesce(Sum("amount"), Value(Decimal("0"))))["t"]
+    stock_value = shop.products.aggregate(
+        v=Coalesce(Sum(ExpressionWrapper(
+            F("quantity") * F("cost_price"),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        )), Value(Decimal("0")))
+    )["v"]
+
+    gross = revenue - cogs
+    net = gross + delivery_income - expenses
+
+    return render(
+        request,
+        "finance.html",
+        {
+            "revenue": revenue,
+            "cogs": cogs,
+            "gross": gross,
+            "delivery_income": delivery_income,
+            "expenses": expenses,
+            "net": net,
+            "stock_value": stock_value,
+            "chart": finance_history(shop),
+            "recent_expenses": shop.expenses.select_related("user")[:10],
+        },
+    )
+
+
+@owner_required
+def expense_create(request):
+    form = ExpenseForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        e = form.save(commit=False)
+        e.shop = request.shop
+        e.user = request.user
+        e.save()
+        messages.success(request, "Dépense enregistrée.")
+        return redirect("finance")
+    return render(
+        request,
+        "expense_form.html",
+        {
+            "form": form,
+            "title": "Nouvelle dépense",
+            "subtitle": "Loyer, transport, salaire, fournisseur... Les dépenses "
+                        "réduisent le bénéfice net de la boutique.",
+            "back": "finance",
+            "crumb": "Finance",
+        },
+    )
+
+
+@require_POST
+@owner_required
+def expense_delete(request, pk):
+    get_object_or_404(Expense, pk=pk, shop=request.shop).delete()
+    messages.success(request, "Dépense supprimée.")
+    return redirect_next(request, "finance")
+
+
+# ---------- Clients ----------
+@perm_required("can_manage_deliveries")
+def customer_list(request):
+    qs = request.shop.customers.select_related("user")
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q)
+            | Q(phone__icontains=q)
+            | Q(address__icontains=q)
+            | Q(note__icontains=q)
+        )
+    threshold = request.shop.delivery_free_threshold
+    rows = [
+        {
+            "customer": c,
+            "total_spent": c.total_spent,
+            "free": c.free_delivery,
+            "last_invoice": c.invoices.order_by("-created_at", "-id").first(),
+        }
+        for c in qs
+    ]
+    if request.GET.get("free"):
+        rows = [r for r in rows if r["free"]]
+    return render(
+        request,
+        "customer_list.html",
+        {"rows": rows, "q": q, "threshold": threshold,
+         "free_filter": bool(request.GET.get("free"))},
+    )
+
+
+@perm_required("can_manage_deliveries")
+def customer_create(request):
+    form = CustomerForm(request.POST or None, shop=request.shop)
+    if request.method == "POST" and form.is_valid():
+        c = form.save(commit=False)
+        c.shop = request.shop
+        c.save()
+        messages.success(request, f"Client « {c.name} » enregistré.")
+        return redirect("customer_list")
+    return render(
+        request,
+        "form_page.html",
+        {
+            "form": form,
+            "title": "Nouveau client",
+            "subtitle": "Nom, téléphone et adresse de livraison. Le nom peut rester "
+                        "anonyme : la facture fonctionne aussi sans client.",
+            "back": "customer_list",
+            "crumb": "Clients",
+        },
+    )
+
+
+@perm_required("can_manage_deliveries")
+def customer_edit(request, pk):
+    c = get_object_or_404(Customer, pk=pk, shop=request.shop)
+    form = CustomerForm(request.POST or None, instance=c, shop=request.shop)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Client mis à jour.")
+        return redirect("customer_list")
+    return render(
+        request,
+        "form_page.html",
+        {
+            "form": form,
+            "title": f"Modifier : {c.name}",
+            "back": "customer_list",
+            "crumb": "Clients",
+        },
+    )
+
+
+@require_POST
+@perm_required("can_manage_deliveries")
+def customer_delete(request, pk):
+    get_object_or_404(Customer, pk=pk, shop=request.shop).delete()
+    messages.success(request, "Client supprimé.")
+    return redirect_next(request, "customer_list")
+
+
+@perm_required("can_manage_deliveries")
+@require_GET
+def customer_info_api(request, pk):
+    """Fiche client pour le formulaire de livraison : dépense cumulée et seuil atteint."""
+    c = get_object_or_404(Customer, pk=pk, shop=request.shop)
+    return JsonResponse({
+        "id": c.pk,
+        "name": c.name,
+        "phone": c.phone,
+        "address": c.address,
+        "total_spent": str(c.total_spent),
+        "free": c.free_delivery,
+        "currency": request.shop.currency,
+    })
+
+
+@perm_required("can_manage_deliveries")
+@require_GET
+def suggest_customers(request):
+    q = _suggest_q(request)
+    qs = request.shop.customers.all()
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q) | Q(phone__icontains=q) | Q(address__icontains=q)
+        )
+    rows = []
+    for c in qs.order_by("name")[:10]:
+        total = c.total_spent
+        rows.append({
+            "id": c.pk,
+            "name": c.name,
+            "sku": c.phone,
+            "category": c.address,
+            "stock": str(total),
+            "badge": c.free_delivery,
+            "spending": f"{total:,.0f}".replace(",", "\u00a0"),
+            "currency": request.shop.currency,
+        })
+    return JsonResponse({"results": rows})
+
+
+# ---------- Factures ----------
+@perm_required("can_manage_deliveries")
+def invoice_list(request):
+    qs = request.shop.invoices.select_related("customer", "user")
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(reference__icontains=q)
+            | Q(customer__name__icontains=q)
+            | Q(note__icontains=q)
+        )
+    rows = [{"invoice": inv, "total": inv.total, "n_items": inv.lines.count()} for inv in qs]
+    page = Paginator(rows, 15).get_page(request.GET.get("page"))
+    return render(request, "invoice_list.html", {"page": page, "q": q})
+
+
+@perm_required("can_manage_deliveries")
+def invoice_create(request):
+    """Facture : en-tête (client) + lignes produits saisies dynamiquement.
+
+    Les produits sortent du stock en mouvements OUT ; le total du client est
+    recalculé au moment de la livraison pour savoir si elle est offerte.
+    """
+    shop = request.shop
+    header = InvoiceHeaderForm(request.POST or None, shop=shop)
+    formset = InvoiceLineFormSet(request.POST or None, form_kwargs={"shop": shop})
+
+    if request.method == "POST" and header.is_valid() and formset.is_valid():
+        failed = False
+        lines = []
+        for f in formset.forms:
+            cd = f.cleaned_data
+            if not cd or cd.get("DELETE"):
+                continue
+            product, qty = cd["product"], cd["quantity"]
+            # Tout est vérifié avant le moindre enregistrement : aucun produit
+            # ne sort si une ligne dépasse le stock disponible.
+            if qty > product.quantity:
+                f.add_error(
+                    "quantity",
+                    f"Stock insuffisant (disponible : {product.quantity}).",
+                )
+                failed = True
+            else:
+                lines.append((product, qty, cd["unit_price"]))
+        if not failed:
+            with transaction.atomic():
+                invoice = header.save(commit=False)
+                invoice.shop = shop
+                invoice.user = request.user
+                invoice.save()
+                total = Decimal("0")
+                for product, qty, unit_price in lines:
+                    record_movement(
+                        product,
+                        StockMovement.OUT,
+                        qty,
+                        f"Facture {invoice.reference}",
+                        request.user,
+                    )
+                    InvoiceLine.objects.create(
+                        invoice=invoice, product=product, quantity=qty, unit_price=unit_price
+                    )
+                    total += qty * unit_price
+            messages.success(
+                request,
+                f"Facture {invoice.reference} créée — total {_money(total)} {shop.currency}.",
+            )
+            return redirect("invoice_list")
+
+    return render(
+        request,
+        "invoice_form.html",
+        {
+            "header": header,
+            "formset": formset,
+            "products": shop.products.order_by("name"),
+        },
+    )
+
+
+@require_POST
+@perm_required("can_manage_deliveries")
+def invoice_delete(request, pk):
+    """Suppression d'une facture : la sortie des produits est annulée (entrées)."""
+    invoice = get_object_or_404(Invoice, pk=pk, shop=request.shop)
+    with transaction.atomic():
+        for line in invoice.lines.select_related("product"):
+            p = Product.objects.select_for_update().get(pk=line.product_id)
+            p.quantity += line.quantity
+            p.save(update_fields=["quantity"])
+            StockMovement.objects.create(
+                product=p,
+                kind=StockMovement.IN,
+                quantity=line.quantity,
+                note=f"Annulation {invoice.reference}",
+                user=request.user,
+            )
+        invoice.lines.all().soft_delete()
+        invoice.soft_delete()
+    messages.success(request, f"Facture {invoice.reference} supprimée, stock recalculé.")
+    return redirect_next(request, "invoice_list")
+
+
+@perm_required("can_manage_deliveries")
+@require_GET
+def invoice_ticket(request, pk):
+    """Ticket de facture imprimable, avec ou sans client (achat anonyme)."""
+    invoice = get_object_or_404(Invoice, pk=pk, shop=request.shop)
+    lines = invoice.lines.select_related("product")
+    return render(
+        request,
+        "invoice_ticket.html",
+        {
+            "invoice": invoice,
+            "lines": lines,
+            "total": invoice.total,
+            "currency": request.shop.currency,
+            "shop": request.shop,
+        },
+    )
+
+
+# ---------- Livraisons ----------
+def _delivery_success_message(d):
+    if d.status == Delivery.CANCELLED:
+        return f"Livraison pour « {d.customer or d.address} » annulée."
+    if d.fee == 0:
+        return f"Livraison pour « {d.customer or d.address} » enregistrée — offerte."
+    return (
+        f"Livraison pour « {d.customer or d.address} » enregistrée — "
+        f"prix {_money(d.fee)}."
+    )
+
+
+@perm_required("can_manage_deliveries")
+def delivery_list(request):
+    qs = request.shop.deliveries.select_related("customer", "invoice", "user")
+    status = request.GET.get("status", "")
+    if status in dict(Delivery.STATUS_CHOICES):
+        qs = qs.filter(status=status)
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(customer__name__icontains=q) | Q(address__icontains=q) | Q(note__icontains=q)
+        )
+    page = Paginator(qs, 15).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "delivery_list.html",
+        {
+            "page": page,
+            "status": status,
+            "q": q,
+            "statuses": Delivery.STATUS_CHOICES,
+        },
+    )
+
+
+@perm_required("can_manage_deliveries")
+def delivery_create(request):
+    ensure_default_delivery_zones(request.shop)
+    initial = {}
+    invoice_id = request.GET.get("facture")
+    if invoice_id:
+        invoice = request.shop.invoices.filter(pk=invoice_id).select_related("customer").first()
+        if invoice:
+            initial["invoice"] = invoice
+    client_id = request.GET.get("client")
+    if client_id and client_id.isdigit():
+        customer = request.shop.customers.filter(pk=client_id).first()
+        if customer:
+            initial.update({"name": customer.name, "phone": customer.phone, "address": customer.address})
+    form = DeliveryForm(request.POST or None, shop=request.shop, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        d = form.save(commit=False)
+        d.shop = request.shop
+        d.user = request.user
+        d.save()
+        messages.success(request, _delivery_success_message(d))
+        return redirect("delivery_list")
+    return render(
+        request,
+        "delivery_form.html",
+        {"form": form, "title": "Nouvelle livraison", "delivery": None,
+         "shop_fee": request.shop.delivery_fee,
+         "threshold": request.shop.delivery_free_threshold,
+         "min_amount": request.shop.delivery_min_amount},
+    )
+
+
+@perm_required("can_manage_deliveries")
+def delivery_edit(request, pk):
+    d = get_object_or_404(Delivery, pk=pk, shop=request.shop)
+    form = DeliveryForm(request.POST or None, instance=d, shop=request.shop)
+    if request.method == "POST" and form.is_valid():
+        d = form.save()
+        messages.success(request, _delivery_success_message(d))
+        return redirect("delivery_list")
+    return render(
+        request,
+        "delivery_form.html",
+        {"form": form, "title": f"Modifier : {d}", "delivery": d,
+         "shop_fee": request.shop.delivery_fee,
+         "threshold": request.shop.delivery_free_threshold,
+         "min_amount": request.shop.delivery_min_amount},
+    )
+
+
+@require_POST
+@perm_required("can_manage_deliveries")
+def movement_delivery(request, pk):
+    """Enregistre une livraison depuis la fenêtre proposée après une sortie éligible."""
+    movement = get_object_or_404(
+        StockMovement.objects.select_related("product"),
+        pk=pk,
+        product__shop=request.shop,
+        kind=StockMovement.OUT,
+    )
+    form = DeliveryForm(request.POST, shop=request.shop, movement=movement)
+    if form.is_valid():
+        d = form.save(commit=False)
+        d.shop = request.shop
+        d.user = request.user
+        d.save()
+        messages.success(request, _delivery_success_message(d))
+        return redirect("movement_list")
+    for field_name, errs in form.errors.items():
+        if field_name == "__all__" or field_name not in form.fields:
+            label = ""
+        else:
+            label = form.fields[field_name].label
+        for error in errs:
+            messages.error(request, f"{label + ' : ' if label else ''}{error}")
+    return redirect(reverse("movement_list") + f"?livrer={pk}")
+
+
+@perm_required("can_manage_deliveries")
+@require_GET
+def invoice_info_api(request, pk):
+    """Détail d'une facture pour le formulaire de livraison : client, total, livraison offerte."""
+    invoice = get_object_or_404(
+        Invoice.objects.select_related("customer"), pk=pk, shop=request.shop
+    )
+    customer = invoice.customer
+    free = bool(customer and customer.free_delivery)
+    threshold = request.shop.delivery_free_threshold
+    total = invoice.total
+    if not free and threshold and threshold > 0 and total >= threshold:
+        free = True
+    return JsonResponse({
+        "id": invoice.pk,
+        "reference": invoice.reference,
+        "total": str(total),
+        "currency": request.shop.currency,
+        "name": customer.name if customer else "",
+        "phone": customer.phone if customer else "",
+        "address": customer.address if customer else "",
+        "free": free,
+    })
+
+
+# ---------- Zones de livraison ----------
+@perm_required("can_manage_deliveries")
+def delivery_zones(request):
+    """Zones (arrondissements/départements) enregistrées à l'avance avec leur tarif."""
+    ensure_default_delivery_zones(request.shop)
+    zones = request.shop.delivery_zones.filter(deleted_at__isnull=True).order_by("name")
+    form = DeliveryZoneForm(request.POST or None, shop=request.shop)
+    if request.method == "POST" and form.is_valid():
+        zone = form.save(commit=False)
+        zone.shop = request.shop
+        zone.save()
+        messages.success(request, f"Zone « {zone.name} » enregistrée.")
+        return redirect("delivery_zones")
+    return render(
+        request,
+        "delivery_zones.html",
+        {"zones": zones, "form": form},
+    )
+
+
+@perm_required("can_manage_deliveries")
+def delivery_zone_edit(request, pk):
+    zone = get_object_or_404(DeliveryZone, pk=pk, shop=request.shop)
+    form = DeliveryZoneForm(request.POST or None, instance=zone, shop=request.shop)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Zone mise à jour.")
+        return redirect("delivery_zones")
+    return render(
+        request,
+        "form_page.html",
+        {
+            "form": form,
+            "title": f"Modifier : {zone.name}",
+            "subtitle": "Nom, tarif et saisie manuelle pour les livraisons hors Brazzaville.",
+            "back": "delivery_zones",
+            "crumb": "Zones de livraison",
+        },
+    )
+
+
+@require_POST
+@perm_required("can_manage_deliveries")
+def delivery_zone_delete(request, pk):
+    zone = get_object_or_404(DeliveryZone, pk=pk, shop=request.shop)
+    zone.delete()
+    messages.success(request, "Zone supprimée.")
+    return redirect("delivery_zones")
+
+
+@require_POST
+@perm_required("can_manage_deliveries")
+def delivery_set_status(request, pk):
+    """Change l'état : livrée, en attente ou annulée."""
+    d = get_object_or_404(Delivery, pk=pk, shop=request.shop)
+    status = request.POST.get("status", "")
+    if status in dict(Delivery.STATUS_CHOICES):
+        d.status = status
+        d.save(update_fields=["status"])
+        messages.success(request, f"Livraison marquée « {d.get_status_display()} ».")
+    else:
+        messages.error(request, "Statut invalide.")
+    return redirect_next(request, "delivery_list")
+
+
+@require_POST
+@perm_required("can_manage_deliveries")
+def delivery_delete(request, pk):
+    get_object_or_404(Delivery, pk=pk, shop=request.shop).delete()
+    messages.success(request, "Livraison supprimée.")
+    return redirect_next(request, "delivery_list")

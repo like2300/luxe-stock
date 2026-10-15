@@ -185,6 +185,24 @@ tailwind.config = {
                         {% if unread_count %}<span class="bg-rose-100 text-rose-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{{ unread_count }}</span>{% endif %}
                     </div>
                 </a>
+
+                {% if request.membership.is_owner %}
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'finance' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'finance' %}">
+                    <iconify-icon icon="solar:chart-square-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Finance</span>
+                </a>
+                {% endif %}
+
+                {% if sp.can_manage_deliveries %}
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'customer_list' or request.resolver_match.url_name == 'customer_create' or request.resolver_match.url_name == 'customer_edit' or request.resolver_match.url_name == 'invoice_list' or request.resolver_match.url_name == 'invoice_create' or request.resolver_match.url_name == 'invoice_ticket' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'customer_list' %}">
+                    <iconify-icon icon="solar:users-round-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Clients / Factures</span>
+                </a>
+                <a class="group flex items-center gap-3 px-4 py-3 rounded-xl {% if request.resolver_match.url_name == 'delivery_list' or request.resolver_match.url_name == 'delivery_create' or request.resolver_match.url_name == 'delivery_edit' or request.resolver_match.url_name == 'delivery_zones' or request.resolver_match.url_name == 'delivery_zone_edit' %}bg-slate-50 text-primary font-medium{% else %}text-slate-500 hover:bg-slate-50 hover:text-primary{% endif %} transition-all duration-200" href="{% url 'delivery_list' %}">
+                    <iconify-icon icon="solar:delivery-linear" width="20" stroke-width="1.5"></iconify-icon>
+                    <span>Livraisons</span>
+                </a>
+                {% endif %}
             </nav>
 
             <!-- Bottom Actions -->

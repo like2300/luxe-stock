@@ -1,9 +1,10 @@
 import uuid as uuid_lib
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.validators import RegexValidator
 from django.db import models, transaction
-from django.db.models import Q
+from django.db.models import DecimalField, F, Q, Sum
 from django.utils import timezone
 from urllib.parse import quote
 
@@ -20,6 +21,17 @@ PERMISSIONS = [
     ("can_manage_employees", "Gérer les employés"),
     ("can_print_tickets", "Imprimer les tickets de caisse"),
     ("can_manage_settings", "Gérer les paramètres de la boutique"),
+    ("can_manage_deliveries", "Gérer les clients et les livraisons"),
+]
+
+# Catégories de dépenses de la page Finance.
+EXPENSE_CATEGORIES = [
+    ("loyer", "Loyer"),
+    ("salaire", "Salaire"),
+    ("transport", "Transport"),
+    ("fournisseur", "Fournisseur"),
+    ("energie", "Électricité / Eau"),
+    ("autre", "Autre"),
 ]
 
 # kind de notification -> (libellé, code son, fréquence du bip en Hz)
@@ -131,6 +143,25 @@ class Shop(SyncFieldsMixin, models.Model):
     # Scanner (saisie clavier / camera) tout en retirant le champ des
     # formulaires produit, les codes lus etant alors enregistres sans saisie.
     barcode_field_enabled = models.BooleanField("Champ « Code-barres »", default=True)
+    # Livraisons : prix par défaut et seuils
+    # Seuil d'achat minimum pour autoriser la livraison (0 = désactivé)
+    delivery_min_amount = models.DecimalField(
+        "Montant minimum d'achat pour la livraison",
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+    )
+    # Prix par défaut et seuil de dépense cumulée à partir duquel
+    # la livraison devient offerte pour le client. Seuil à 0 = désactivé.
+    delivery_fee = models.DecimalField(
+        "Prix de livraison (par défaut)", max_digits=12, decimal_places=2, default=0
+    )
+    delivery_free_threshold = models.DecimalField(
+        "Seuil de dépense cumulée (livraison offerte)",
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+    )
 
     def __str__(self):
         return self.name
@@ -192,6 +223,7 @@ class Membership(SyncFieldsMixin, models.Model):
     # les employes deja crees, et proposee cochee a la creation d'un compte.
     can_print_tickets = models.BooleanField(default=True)
     can_manage_settings = models.BooleanField(default=False)
+    can_manage_deliveries = models.BooleanField(default=False)
 
     def has(self, perm):
         return self.is_owner or bool(getattr(self, perm, False))
@@ -428,3 +460,241 @@ def notify_threshold_crossing(product, before, user=None):
         push_notification(product, Notification.OUT_OF_STOCK, user=user)
     elif before > product.alert_threshold >= product.quantity > 0:
         push_notification(product, Notification.LOW_STOCK, user=user)
+
+
+# ---------------------------------------------------------------------------
+# Finances : dépenses manuelles saisies par le propriétaire.
+# ---------------------------------------------------------------------------
+class Expense(SoftDeleteMixin, models.Model):
+    """Une dépense de la boutique (loyer, transport, salaire...)."""
+
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="expenses",
+                             verbose_name="Boutique")
+    label = models.CharField("Libellé", max_length=120)
+    amount = models.DecimalField("Montant", max_digits=12, decimal_places=2)
+    category = models.CharField("Catégorie", max_length=20, choices=EXPENSE_CATEGORIES, default="autre")
+    spent_at = models.DateField("Date de la dépense")
+    note = models.CharField("Note", max_length=200, blank=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-spent_at", "-id"]
+        verbose_name_plural = "dépenses"
+
+    def __str__(self):
+        return f"{self.label} — {self.amount}"
+
+
+# ---------------------------------------------------------------------------
+# Clients, factures et livraisons.
+# ---------------------------------------------------------------------------
+class Customer(SoftDeleteMixin, models.Model):
+    """Un acheteur de la boutique, relié facultativement à un compte.
+
+    Le nom peut rester anonyme : la facture fonctionne aussi sans client.
+    """
+
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="customers",
+                             verbose_name="Boutique")
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                             verbose_name="Compte lié")
+    name = models.CharField("Nom du client", max_length=150)
+    phone = models.CharField("Téléphone", max_length=40, blank=True)
+    address = models.CharField("Adresse de livraison", max_length=200, blank=True)
+    note = models.CharField("Note", max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "client"
+
+    def __str__(self):
+        return self.name or "(client anonyme)"
+
+    @property
+    def total_spent(self):
+        """Total des achats du client, cumul de ses factures."""
+        total = self.invoices.aggregate(
+            t=Sum(
+                F("lines__quantity") * F("lines__unit_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )
+        )["t"]
+        return total or Decimal("0")
+
+    @property
+    def free_delivery(self):
+        """Livraison offerte quand le cumul d'achats atteint le seuil de la boutique."""
+        threshold = self.shop.delivery_free_threshold
+        return bool(threshold and self.total_spent >= threshold)
+
+
+class Invoice(SoftDeleteMixin, models.Model):
+    """Facture : les produits achetés sortent du stock en mouvements OUT.
+
+    Même sans client (achat anonyme), la facture existe et son total
+    alimente la Finance via les mouvements de sortie.
+    """
+
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="invoices",
+                             verbose_name="Boutique")
+    customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.SET_NULL,
+                                 related_name="invoices", verbose_name="Client")
+    reference = models.CharField("Référence", max_length=20, blank=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                             verbose_name="Vendeur")
+    note = models.CharField("Note", max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "facture"
+
+    def __str__(self):
+        return self.reference or f"Facture #{self.pk}"
+
+    @property
+    def total(self):
+        total = self.lines.aggregate(
+            t=Sum(
+                F("quantity") * F("unit_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )
+        )["t"]
+        return total or Decimal("0")
+
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            n = Invoice.objects.filter(shop=self.shop).count() + 1
+            while Invoice.objects.filter(shop=self.shop, reference=f"FAC-{n:04d}").exists():
+                n += 1
+            self.reference = f"FAC-{n:04d}"
+        super().save(*args, **kwargs)
+
+
+class InvoiceLine(SoftDeleteMixin, models.Model):
+    """Une ligne de facture : produit, quantité et prix payé au moment de la vente."""
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="lines",
+                                verbose_name="Facture")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="invoice_lines",
+                                verbose_name="Produit")
+    quantity = models.PositiveIntegerField("Quantité")
+    unit_price = models.DecimalField("Prix unitaire", max_digits=12, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.quantity} × {self.product.name}"
+
+    @property
+    def line_total(self):
+        return self.quantity * self.unit_price
+
+
+class DeliveryZone(SoftDeleteMixin, models.Model):
+    """Zone de livraison (arrondissement/département) avec tarif associé."""
+
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="delivery_zones",
+                             verbose_name="Boutique")
+    name = models.CharField("Nom de la zone", max_length=120)
+    fee = models.DecimalField("Prix de livraison", max_digits=12, decimal_places=2, default=0)
+    is_manual = models.BooleanField("Montant saisi manuellement", default=False,
+                                    help_text="Pour les livraisons hors Brazzaville, le prix est saisi à la main.")
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "zone de livraison"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "name"],
+                condition=Q(deleted_at__isnull=True),
+                name="uniq_delivery_zone_name_per_shop_live",
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class Delivery(SoftDeleteMixin, models.Model):
+    """Une livraison : à qui, où, quand, pour quel prix et son état.
+
+    Le prix par défaut vient des paramètres de la boutique. Si le client a
+    atteint le seuil de dépense cumulée, la livraison est offerte (≈ 0).
+    """
+
+    PENDING = "PENDING"
+    DELIVERED = "DELIVERED"
+    CANCELLED = "CANCELLED"
+
+    STATUS_CHOICES = [
+        (PENDING, "En attente"),
+        (DELIVERED, "Livrée"),
+        (CANCELLED, "Annulée"),
+    ]
+
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="deliveries",
+                             verbose_name="Boutique")
+    customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.SET_NULL,
+                                 related_name="deliveries", verbose_name="Client")
+    invoice = models.ForeignKey(Invoice, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="deliveries", verbose_name="Facture liée")
+    zone = models.ForeignKey(DeliveryZone, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="deliveries", verbose_name="Zone de livraison")
+    movement = models.ForeignKey("StockMovement", null=True, blank=True, on_delete=models.SET_NULL,
+                                 related_name="deliveries", verbose_name="Sortie liée")
+    address = models.CharField("Lieu de livraison", max_length=200)
+    scheduled_for = models.DateField("Date de livraison", null=True, blank=True)
+    fee = models.DecimalField("Prix de la livraison", max_digits=12, decimal_places=2)
+    status = models.CharField("Statut", max_length=10, choices=STATUS_CHOICES, default=PENDING)
+    note = models.CharField("Note", max_length=200, blank=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "livraison"
+
+    def __str__(self):
+        target = self.customer.name if self.customer else self.address
+        return f"Livraison {target} — {self.get_status_display()}"
+
+    @property
+    def is_paid(self):
+        return self.fee == 0 and self.status == self.DELIVERED
+
+
+def compute_delivery_fee(shop, customer):
+    """Prix d'une livraison : offerte si le client a atteint le seuil, sinon le tarif par défaut."""
+    if customer is not None and customer.free_delivery:
+        return Decimal("0")
+    return shop.delivery_fee or Decimal("0")
+
+
+def get_default_delivery_zones():
+    """Zones par défaut : 9 arrondissements de Brazzaville + Hors Brazzaville."""
+    return [
+        ("Makélékélé (1er)", Decimal("2000")),
+        ("Bacongo (2e)", Decimal("2000")),
+        ("Poto-Poto (3e)", Decimal("2000")),
+        ("Moungali (4e)", Decimal("2000")),
+        ("Ouenzé (5e)", Decimal("2000")),
+        ("Talangaï (6e)", Decimal("2000")),
+        ("Mfilou (7e)", Decimal("2000")),
+        ("Madibou (8e)", Decimal("2000")),
+        ("Djiri (9e)", Decimal("2000")),
+        ("Hors Brazzaville", Decimal("0")),
+    ]
+
+
+def ensure_default_delivery_zones(shop):
+    """Crée les zones par défaut si la boutique n'en a aucune."""
+    if shop.delivery_zones.count() > 0:
+        return
+    for name, fee in get_default_delivery_zones():
+        DeliveryZone.objects.create(
+            shop=shop,
+            name=name,
+            fee=fee,
+            is_manual=(name == "Hors Brazzaville"),
+        )

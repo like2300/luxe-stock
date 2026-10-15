@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block page_title %}Clients — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Clients</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Liste des Clients</h1>
+        <p class="text-slate-500">
+            {% if threshold %}
+            Livraison offerte dès {{ threshold|floatformat:0 }} {{ shop.currency }} d'achat cumulé par client.
+            {% else %}
+            Les acheteurs de la boutique et leurs dépenses cumulées.
+            {% endif %}
+        </p>
+    </div>
+    <div class="flex items-center gap-3">
+        {% if free_filter %}
+        <a href="{% url 'customer_list' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+            <iconify-icon icon="solar:filter-close-linear" width="16"></iconify-icon>
+            <span>Tous les clients</span>
+        </a>
+        {% endif %}
+        <a href="{% url 'customer_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+            <iconify-icon icon="solar:user-plus-rounded-linear" width="18"></iconify-icon>
+            <span>Nouveau Client</span>
+        </a>
+    </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <div class="p-6 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center gap-3">
+        <form method="get" class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto sm:flex-1">
+            <div class="relative w-full">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="q" value="{{ q }}" placeholder="Rechercher un client (nom, téléphone, adresse)..." class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
+            </div>
+            <button type="submit" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:opacity-90 transition-opacity shrink-0">
+                <iconify-icon icon="solar:magnifier-linear" width="16"></iconify-icon>
+                <span>Rechercher</span>
+            </button>
+        </form>
+        <a href="{% url 'customer_list' %}?free=1" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium {% if free_filter %}bg-emerald-600 text-white{% else %}bg-emerald-50 text-emerald-700 hover:bg-emerald-100{% endif %} transition-colors shrink-0">
+            <iconify-icon icon="solar:delivery-linear" width="16"></iconify-icon>
+            <span>Livraison offerte</span>
+        </a>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Client</th>
+                    <th class="px-6 py-4">Téléphone</th>
+                    <th class="px-6 py-4">Adresse</th>
+                    <th class="px-6 py-4 text-right">Total dépensé</th>
+                    <th class="px-6 py-4">Livraison</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-pastelPurple text-primary flex items-center justify-center text-xs font-bold shrink-0">
+                                {{ row.customer.name|slice:":2"|upper }}
+                            </div>
+                            <div class="min-w-0">
+                                <span class="font-medium text-dark block truncate">{{ row.customer.name }}</span>
+                                {% if row.last_invoice %}
+                                <span class="text-xs text-slate-400">Dernière facture : {{ row.last_invoice.reference }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">{{ row.customer.phone|default:"—" }}</td>
+                    <td class="px-6 py-4 max-w-xs truncate">{{ row.customer.address|default:"—" }}</td>
+                    <td class="px-6 py-4 text-right font-semibold text-dark">{{ row.total_spent|floatformat:0 }} {{ shop.currency }}</td>
+                    <td class="px-6 py-4">
+                        {% if row.free %}
+                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                            <iconify-icon icon="solar:delivery-linear" width="13"></iconify-icon> Offerte
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                            Payante
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex gap-2 justify-end">
+                            {% if row.last_invoice %}
+                            <a href="{% url 'invoice_ticket' row.last_invoice.pk %}" target="_blank" rel="noopener" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Imprimer la dernière facture">
+                                <iconify-icon icon="solar:printer-minimalistic-linear" width="18"></iconify-icon>
+                            </a>
+                            {% endif %}
+                            <a href="{% url 'delivery_create' %}?client={{ row.customer.pk }}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Enregistrer une livraison pour ce client">
+                                <iconify-icon icon="solar:delivery-linear" width="18"></iconify-icon>
+                            </a>
+                            <a href="{% url 'customer_edit' row.customer.pk %}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Modifier">
+                                <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                            </a>
+                            <form method="post" action="{% url 'customer_delete' row.customer.pk %}" class="inline" onsubmit="return confirm('Supprimer ce client ?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.path }}{% if q %}?q={{ q }}{% endif %}">
+                                <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="px-6 py-4 text-center text-slate-400">
+                        {% if q %}Aucun client ne correspond à « {{ q }} ».{% else %}Aucun client enregistré.{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

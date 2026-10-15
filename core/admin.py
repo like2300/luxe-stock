@@ -8,8 +8,19 @@ from django.utils.html import format_html
 
 from unfold.decorators import display
 
-from .models import (PERMISSIONS, Category, Membership, Notification, Product, Shop,
-                    StockMovement)
+from .models import (
+    PERMISSIONS,
+    Category,
+    Customer,
+    Delivery,
+    Expense,
+    Invoice,
+    Membership,
+    Notification,
+    Product,
+    Shop,
+    StockMovement,
+)
 
 
 def badge(text, background, foreground):
@@ -295,3 +306,29 @@ class StockMovementAdmin(admin.ModelAdmin):
     @display(description="Quantité", ordering="quantity")
     def signed(self, obj):
         return ("+" if obj.kind == StockMovement.IN else "−") + str(obj.quantity)
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ("name", "phone", "address", "shop", "created_at")
+    search_fields = ("name", "phone", "address")
+    list_filter = ("shop",)
+
+
+@admin.register(Expense)
+class ExpenseAdmin(admin.ModelAdmin):
+    list_display = ("spent_at", "label", "category", "amount", "shop", "user")
+    list_filter = ("shop", "category")
+    search_fields = ("label", "note")
+
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = ("reference", "customer", "shop", "created_at")
+    search_fields = ("reference", "customer__name")
+
+
+@admin.register(Delivery)
+class DeliveryAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "customer", "address", "fee", "status", "shop")
+    list_filter = ("shop", "status")

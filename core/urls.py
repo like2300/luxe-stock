@@ -30,6 +30,7 @@ urlpatterns = [
     path("mouvements/<int:pk>/modifier/", views.movement_edit, name="movement_edit"),
     path("mouvements/<int:pk>/supprimer/", views.movement_delete, name="movement_delete"),
     path("mouvements/<int:pk>/ticket/", views.movement_ticket, name="movement_ticket"),
+    path("mouvements/<int:pk>/livraison/", views.movement_delivery, name="movement_delivery"),
     path("scanner/", views.scan, name="scan"),
     path("api/scan/", views.scan_api, name="scan_api"),
     path("api/scan/mouvement/", views.scan_movement_api, name="scan_movement_api"),
@@ -65,4 +66,42 @@ urlpatterns = [
         views.profile_photo_delete,
         name="profile_photo_delete",
     ),
+    # Finance (propriétaire)
+    path("finance/", views.finance, name="finance"),
+    path("finance/depenses/ajouter/", views.expense_create, name="expense_create"),
+    path(
+        "finance/depenses/<int:pk>/supprimer/",
+        views.expense_delete,
+        name="expense_delete",
+    ),
+    # Clients
+    path("clients/", views.customer_list, name="customer_list"),
+    path("clients/ajouter/", views.customer_create, name="customer_create"),
+    path("clients/<int:pk>/modifier/", views.customer_edit, name="customer_edit"),
+    path("clients/<int:pk>/supprimer/", views.customer_delete, name="customer_delete"),
+    path("api/suggestions/clients/", views.suggest_customers, name="suggest_customers"),
+    path("api/clients/<int:pk>/", views.customer_info_api, name="customer_info_api"),
+    # Factures
+    path("factures/", views.invoice_list, name="invoice_list"),
+    path("factures/nouvelle/", views.invoice_create, name="invoice_create"),
+    path("factures/<int:pk>/supprimer/", views.invoice_delete, name="invoice_delete"),
+    path("factures/<int:pk>/ticket/", views.invoice_ticket, name="invoice_ticket"),
+    # Livraisons
+    path("livraisons/", views.delivery_list, name="delivery_list"),
+    path("livraisons/nouvelle/", views.delivery_create, name="delivery_create"),
+    path("livraisons/zones/", views.delivery_zones, name="delivery_zones"),
+    path("livraisons/zones/<int:pk>/modifier/", views.delivery_zone_edit, name="delivery_zone_edit"),
+    path(
+        "livraisons/zones/<int:pk>/supprimer/",
+        views.delivery_zone_delete,
+        name="delivery_zone_delete",
+    ),
+    path("livraisons/<int:pk>/modifier/", views.delivery_edit, name="delivery_edit"),
+    path(
+        "livraisons/<int:pk>/statut/",
+        views.delivery_set_status,
+        name="delivery_set_status",
+    ),
+    path("livraisons/<int:pk>/supprimer/", views.delivery_delete, name="delivery_delete"),
+    path("api/factures/<int:pk>/", views.invoice_info_api, name="invoice_info_api"),
 ]

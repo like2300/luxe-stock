@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block page_title %}Finance — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Finance</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Finance de la société</h1>
+        <p class="text-slate-500">Réservé au créateur : ventes, bénéfices, dépenses et valeur du stock.</p>
+    </div>
+    <a href="{% url 'expense_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+        <iconify-icon icon="solar:add-circle-linear" width="18"></iconify-icon>
+        <span>Ajouter une dépense</span>
+    </a>
+</div>
+
+<!-- Cartes de synthèse -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 group hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all">
+        <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <iconify-icon icon="solar:dollar-minimalistic-linear" width="24" stroke-width="1.5"></iconify-icon>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Chiffre d'affaires</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ revenue|floatformat:0 }} {{ shop.currency }}</p>
+        <p class="text-xs text-slate-400 mt-1">Ventes : sorties de stock × prix de vente</p>
+    </div>
+
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 group hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all">
+        <div class="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <iconify-icon icon="solar:chart-2-linear" width="24" stroke-width="1.5"></iconify-icon>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Bénéfice brut</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ gross|floatformat:0 }} {{ shop.currency }}</p>
+        <p class="text-xs text-slate-400 mt-1">CA − coût d'achat des produits vendus</p>
+    </div>
+
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 group hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all">
+        <div class="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <iconify-icon icon="solar:wallet-linear" width="24" stroke-width="1.5"></iconify-icon>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Bénéfice net</h3>
+        <p class="text-dark text-2xl font-bold font-poppins {% if net < 0 %}text-rose-600{% endif %}">{{ net|floatformat:0 }} {{ shop.currency }}</p>
+        <p class="text-xs text-slate-400 mt-1">Bénéfice brut + livraisons − dépenses</p>
+    </div>
+
+    <div class="bg-white rounded-2xl p-6 shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 group hover:shadow-[0_8px_30px_-4px_rgba(88,2,247,0.08)] transition-all">
+        <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <iconify-icon icon="solar:box-linear" width="24" stroke-width="1.5"></iconify-icon>
+        </div>
+        <h3 class="text-slate-400 text-sm font-medium mb-1">Valeur du stock</h3>
+        <p class="text-dark text-2xl font-bold font-poppins">{{ stock_value|floatformat:0 }} {{ shop.currency }}</p>
+        <p class="text-xs text-slate-400 mt-1">Quantités × prix d'achat</p>
+    </div>
+</div>
+
+<!-- Détail des revenus / charges -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div class="lg:col-span-2 bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-6">
+        <h3 class="text-dark text-lg font-semibold font-poppins mb-5">Évolution sur les derniers mois</h3>
+        <div class="h-72 w-full relative">
+            <canvas id="financeChart" style="height: 288px;"></canvas>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-6">
+        <h3 class="text-dark text-lg font-semibold font-poppins mb-4">Détail</h3>
+        <dl class="space-y-3 text-sm">
+            <div class="flex justify-between items-baseline border-b border-slate-50 pb-2">
+                <dt class="text-slate-500">Coût des produits vendus</dt>
+                <dd class="font-semibold text-dark">{{ cogs|floatformat:0 }} {{ shop.currency }}</dd>
+            </div>
+            <div class="flex justify-between items-baseline border-b border-slate-50 pb-2">
+                <dt class="text-slate-500">Revenu des livraisons</dt>
+                <dd class="font-semibold text-emerald-600">+ {{ delivery_income|floatformat:0 }} {{ shop.currency }}</dd>
+            </div>
+            <div class="flex justify-between items-baseline border-b border-slate-50 pb-2">
+                <dt class="text-slate-500">Dépenses totales</dt>
+                <dd class="font-semibold text-rose-600">− {{ expenses|floatformat:0 }} {{ shop.currency }}</dd>
+            </div>
+            <div class="flex justify-between items-baseline pt-1">
+                <dt class="font-semibold text-dark">Bénéfice net</dt>
+                <dd class="font-bold text-lg {% if net < 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">{{ net|floatformat:0 }} {{ shop.currency }}</dd>
+            </div>
+        </dl>
+    </div>
+</div>
+
+<!-- Dépenses récentes -->
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <div class="p-6 border-b border-slate-50 flex justify-between items-center">
+        <h3 class="text-dark text-lg font-semibold font-poppins">Dépenses récentes</h3>
+        <a href="{% url 'expense_create' %}" class="text-primary text-sm font-medium hover:underline">Ajouter</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Date</th>
+                    <th class="px-6 py-4">Libellé</th>
+                    <th class="px-6 py-4">Catégorie</th>
+                    <th class="px-6 py-4 text-right">Montant</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in recent_expenses %}
+                <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                    <td class="px-6 py-4 whitespace-nowrap">{{ e.spent_at|date:"d/m/Y" }}</td>
+                    <td class="px-6 py-4 font-medium text-dark">{{ e.label }}</td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                            {{ e.get_category_display }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-right font-semibold text-dark">{{ e.amount|floatformat:0 }} {{ shop.currency }}</td>
+                    <td class="px-6 py-4 text-right">
+                        <form method="post" action="{% url 'expense_delete' e.pk %}" class="inline" onsubmit="return confirm('Supprimer cette dépense ?');">
+                            {% csrf_token %}
+                            <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="px-6 py-4 text-center text-slate-400">Aucune dépense enregistrée.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{{ chart|json_script:"finance-chart-data" }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof Chart === 'undefined') return;
+    const canvas = document.getElementById('financeChart');
+    if (!canvas) return;
+    const node = document.getElementById('finance-chart-data');
+    const data = node ? JSON.parse(node.textContent) : {labels: [], revenue: [], cogs: [], expenses: [], delivery: [], profit: []};
+
+    new Chart(canvas.getContext('2d'), {
+        data: {
+            labels: data.labels,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Chiffre d\'affaires',
+                    data: data.revenue,
+                    backgroundColor: 'rgba(16, 185, 129, 0.55)',
+                    borderRadius: 6,
+                    barPercentage: 0.5,
+                    categoryPercentage: 0.6
+                },
+                {
+                    type: 'bar',
+                    label: 'Dépenses',
+                    data: data.expenses,
+                    backgroundColor: 'rgba(244, 63, 94, 0.55)',
+                    borderRadius: 6,
+                    barPercentage: 0.5,
+                    categoryPercentage: 0.6
+                },
+                {
+                    type: 'line',
+                    label: 'Bénéfice net',
+                    data: data.profit,
+                    borderColor: '#5802f7',
+                    backgroundColor: 'rgba(88, 2, 247, 0.1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#ffffff',
+                    pointBorderColor: '#5802f7',
+                    pointRadius: 4,
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {mode: 'index', intersect: false},
+            plugins: {
+                legend: {position: 'top', align: 'end', labels: {usePointStyle: true, pointStyle: 'circle', boxWidth: 8}},
+                tooltip: {
+                    backgroundColor: 'white',
+                    titleColor: '#1a1a1a',
+                    bodyColor: '#64748b',
+                    borderColor: '#e2e8f0',
+                    borderWidth: 1,
+                    padding: 12,
+                    callbacks: {
+                        label: function (context) {
+                            return context.dataset.label + ' : ' + context.parsed.y.toLocaleString('fr-FR') + ' {{ shop.currency }}';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {borderDash: [4, 4]},
+                    ticks: {callback: function (value) { return value.toLocaleString('fr-FR'); }}
+                },
+                x: {grid: {display: false}}
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}{{ title }} — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<a href="{% url 'delivery_list' %}" class="hover:text-primary transition-colors">Livraisons</a>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">{{ title }}</span>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const invoiceSelect = document.querySelector('select[name="invoice"]');
+    const zoneSelect = document.querySelector('select[name="zone"]');
+    const nameInput = document.querySelector('input[name="name"]');
+    const phoneInput = document.querySelector('input[name="phone"]');
+    const addressInput = document.querySelector('input[name="address"]');
+    const feeInput = document.querySelector('input[name="fee"]');
+    const freeHint = document.getElementById('free-hint');
+    const manualHint = document.getElementById('manual-hint');
+    const currency = '{{ shop.currency }}';
+
+    function applyZone() {
+        if (!zoneSelect) return;
+        const opt = zoneSelect.options[zoneSelect.selectedIndex];
+        if (!opt || !opt.value) return;
+        const manual = opt.dataset.manual === '1';
+        if (manual) {
+            if (manualHint) manualHint.classList.remove('hidden');
+            if (feeInput) {
+                feeInput.readOnly = false;
+                feeInput.value = '';
+                feeInput.placeholder = 'Saisir le montant (hors Brazzaville)';
+            }
+        } else {
+            if (manualHint) manualHint.classList.add('hidden');
+            if (feeInput) {
+                feeInput.readOnly = true;
+                feeInput.value = opt.dataset.fee || '0';
+            }
+        }
+    }
+
+    function applyInvoice() {
+        if (!invoiceSelect || !invoiceSelect.value) return;
+        fetch('/api/factures/' + invoiceSelect.value + '/')
+            .then(r => r.json())
+            .then(d => {
+                if (nameInput && !nameInput.value) nameInput.value = d.name || '';
+                if (phoneInput && !phoneInput.value) phoneInput.value = d.phone || '';
+                if (addressInput && !addressInput.value) addressInput.value = d.address || '';
+                if (d.free) {
+                    if (feeInput) { feeInput.value = '0'; feeInput.readOnly = true; }
+                    if (freeHint) {
+                        freeHint.textContent = 'Livraison offerte : le total de la facture (' +
+                            Number(d.total).toLocaleString('fr-FR') + ' ' + currency + ') atteint le seuil.';
+                        freeHint.classList.remove('hidden');
+                    }
+                } else if (freeHint) {
+                    freeHint.classList.add('hidden');
+                }
+            });
+    }
+
+    if (zoneSelect) {
+        zoneSelect.addEventListener('change', applyZone);
+        applyZone();
+    }
+    if (invoiceSelect) {
+        invoiceSelect.addEventListener('change', applyInvoice);
+        applyInvoice();
+    }
+});
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">{{ title }}</h1>
+        <p class="text-slate-500">
+            Le client est repris de la facture. Choisissez l'arrondissement : le tarif s'applique
+            automatiquement. Hors Brazzaville, saisissez le montant à la main.
+        </p>
+    </div>
+    <a href="{% url 'delivery_list' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+        <iconify-icon icon="solar:arrow-left-linear" width="16"></iconify-icon>
+        <span>Retour aux livraisons</span>
+    </a>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 p-8">
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Facture liée</label>
+                {{ form.invoice }}
+                <p class="mt-1.5 text-xs text-slate-400">Sélectionnez la facture de l'achat : le client, son téléphone et son adresse sont récupérés automatiquement.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Nom du client *</label>
+                {{ form.name }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Téléphone</label>
+                {{ form.phone }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Arrondissement / Département *</label>
+                {{ form.zone }}
+                <p class="mt-1.5 text-xs text-slate-400">Les arrondissements sont enregistrés à l'avance avec leur tarif. <a href="{% url 'delivery_zones' %}" class="text-primary hover:underline">Gérer les zones</a>.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Adresse de livraison</label>
+                {{ form.address }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Date de livraison</label>
+                {{ form.scheduled_for }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Prix de la livraison</label>
+                {{ form.fee }}
+                <p id="manual-hint" class="mt-1.5 text-xs text-amber-600 hidden">Hors Brazzaville : saisissez le montant manuellement.</p>
+                <p id="free-hint" class="mt-1.5 text-xs text-emerald-600 hidden"></p>
+                <p class="mt-1.5 text-xs text-slate-400">
+                    {% if min_amount %}Montant minimum d'achat pour valider la livraison : {{ min_amount|floatformat:0 }} {{ shop.currency }}. {% endif %}
+                    Tarif par défaut : {{ shop_fee|floatformat:0 }} {{ shop.currency }}.
+                </p>
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Note</label>
+                {{ form.note }}
+            </div>
+        </div>
+
+        {% if form.errors %}
+        <div class="p-4 rounded-xl bg-rose-50 border border-rose-100 text-sm text-rose-700 space-y-1">
+            {% for f in form %}{% for e in f.errors %}<p>{{ f.label }} : {{ e }}</p>{% endfor %}{% endfor %}
+            {% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="flex justify-end gap-3">
+            <a href="{% url 'delivery_list' %}" class="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">Annuler</a>
+            <button type="submit" class="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">Enregistrer</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

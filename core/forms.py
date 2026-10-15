@@ -1,11 +1,28 @@
+from decimal import Decimal
+
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.files.uploadedfile import UploadedFile
+from django.utils import timezone
 from PIL import Image
 
-from .models import PERMISSIONS, Category, Product, Profile, Shop, StockMovement
+from .models import (
+    EXPENSE_CATEGORIES,
+    Category,
+    Customer,
+    Delivery,
+    DeliveryZone,
+    Expense,
+    Invoice,
+    PERMISSIONS,
+    Product,
+    Profile,
+    Shop,
+    StockMovement,
+    compute_delivery_fee,
+)
 
 # Classes communes a tous les champs, pour que les formulaires soient
 # homogenes avec le reste de l'interface (Tailwind).
@@ -127,13 +144,17 @@ class ShopSettingsForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = Shop
         fields = ["name", "address", "phone", "currency", "logo", "favicon", "scanner_enabled",
-                  "barcode_field_enabled", "primary_color", "sidebar_color",
+                  "barcode_field_enabled", "delivery_fee", "delivery_free_threshold",
+                  "delivery_min_amount",
+                  "primary_color", "sidebar_color",
                   "header_color", "background_color"]
         widgets = {f: ColorInput() for f in ["primary_color", "sidebar_color", "header_color", "background_color"]}
 
     # Interrupteurs dessines a la main dans la page des parametres : une case
     # non cochee ne doit pas etre lue comme « desactiver la fonctionnalite ».
     TOGGLES = ("scanner_enabled", "barcode_field_enabled")
+    # Champs de livraison : gardent leur valeur actuelle quand ils ne sont pas envoyes.
+    OPTIONAL_KEEP = ("delivery_fee", "delivery_free_threshold", "delivery_min_amount")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -141,6 +162,15 @@ class ShopSettingsForm(StyledFormMixin, forms.ModelForm):
             self.fields[name].required = False
             if not self.is_bound:
                 self.fields[name].initial = Shop._meta.get_field(name).default
+        for name in self.OPTIONAL_KEEP:
+            self.fields[name].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        for name in self.OPTIONAL_KEEP:
+            if name in self.fields and cleaned.get(name) is None:
+                cleaned[name] = getattr(self.instance, name)
+        return cleaned
 
     def clean_favicon(self):
         return clean_image_upload(
@@ -300,6 +330,28 @@ class CategoryAutocompleteWidget(AutocompleteSelect):
     kind = "category"
 
 
+class CustomerAutocompleteWidget(AutocompleteSelect):
+    endpoint_name = "suggest_customers"
+    search_placeholder = "Rechercher un client (nom, téléphone, adresse)..."
+    kind = "customer"
+
+
+class ZoneSelect(forms.Select):
+    """Select des zones qui expose le tarif et le mode manuel aux options.
+
+    Le formulaire de livraison s'en sert en JavaScript pour pré-remplir le prix
+    ou l'activer pour les livraisons hors Brazzaville (montant manuel).
+    """
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        zone = getattr(value, "instance", None)
+        if zone is not None:
+            option["attrs"]["data-fee"] = str(zone.fee)
+            option["attrs"]["data-manual"] = "1" if zone.is_manual else "0"
+        return option
+
+
 def _autocomplete(field, widget_class):
     """Remplace le widget d'un champ par sa version avec suggestions, en gardant le style."""
     field.widget = widget_class(attrs=dict(field.widget.attrs), choices=field.choices)
@@ -387,3 +439,296 @@ class EmployeeForm(StyledFormMixin, forms.Form):
     @property
     def perm_fields(self):
         return [self[n] for n, _ in PERMISSIONS]
+
+
+# ---------- Clients, factures, livraisons ----------
+class CustomerForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = Customer
+        fields = ["name", "phone", "address", "note"]
+
+    def __init__(self, *args, shop, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.shop = shop
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        if not name:
+            raise forms.ValidationError("Le nom du client est obligatoire.")
+        return name
+
+
+class ExpenseForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = Expense
+        fields = ["label", "amount", "category", "spent_at", "note"]
+        widgets = {
+            "spent_at": forms.DateInput(attrs={"type": "date"}),
+            "category": forms.Select(choices=EXPENSE_CATEGORIES),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.is_bound:
+            self.fields["spent_at"].initial = timezone.localdate()
+
+    def clean_amount(self):
+        amount = self.cleaned_data["amount"]
+        if amount is not None and amount <= 0:
+            raise forms.ValidationError("Le montant doit être supérieur à zéro.")
+        return amount
+
+
+class InvoiceLineForm(StyledFormMixin, forms.Form):
+    """Une ligne « produit » d'une facture : produit, quantité, prix payé."""
+
+    product = forms.ModelChoiceField(
+        queryset=Product.objects.none(), label="Produit", empty_label=None
+    )
+    quantity = forms.IntegerField(label="Quantité", min_value=1, initial=1)
+    unit_price = forms.DecimalField(label="Prix unitaire", max_digits=12, decimal_places=2,
+                                    required=False)
+
+    def __init__(self, *args, shop, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = shop.products.all().order_by("name")
+        _autocomplete(self.fields["product"], ProductAutocompleteWidget)
+        self.fields["unit_price"].help_text = "Laisser vide pour le prix de vente du produit."
+
+    def clean(self):
+        cd = super().clean()
+        product = cd.get("product")
+        if product is not None and cd.get("unit_price") is None:
+            # Prix de vente courant du produit, ajustable à la saisie.
+            cd["unit_price"] = product.sale_price
+        return cd
+
+
+InvoiceLineFormSet = forms.formset_factory(
+    InvoiceLineForm, extra=3, can_delete=True, min_num=1, validate_min=True
+)
+
+
+class InvoiceHeaderForm(StyledFormMixin, forms.ModelForm):
+    """En-tête d'une facture : client (facultatif, achat anonyme) et note."""
+
+    class Meta:
+        model = Invoice
+        fields = ["customer", "note"]
+
+    def __init__(self, *args, shop, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.shop = shop
+        self.fields["customer"].queryset = shop.customers.all().order_by("name")
+        self.fields["customer"].required = False
+        _autocomplete(self.fields["customer"], CustomerAutocompleteWidget)
+
+
+class DeliveryForm(StyledFormMixin, forms.ModelForm):
+    name = forms.CharField(label="Nom du client", max_length=150, required=False)
+    phone = forms.CharField(label="Téléphone", max_length=40, required=False)
+    zone = forms.ModelChoiceField(
+        queryset=DeliveryZone.objects.none(),
+        label="Arrondissement / Département",
+        required=False,
+        widget=ZoneSelect,
+    )
+
+    class Meta:
+        model = Delivery
+        fields = ["invoice", "zone", "address", "scheduled_for", "fee", "note"]
+        widgets = {
+            "scheduled_for": forms.DateInput(attrs={"type": "date"}),
+            "address": forms.TextInput(attrs={"placeholder": "Quartier, rue ou ville (si hors zone)"}),
+        }
+
+    def __init__(self, *args, shop, movement=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.shop = shop
+        self.movement = movement
+        self.fields["invoice"].queryset = shop.invoices.select_related("customer").order_by(
+            "-created_at"
+        )
+        self.fields["invoice"].required = False
+        self.fields["invoice"].empty_label = "Aucune facture liée"
+
+        self.fields["zone"].queryset = shop.delivery_zones.filter(deleted_at__isnull=True).order_by("name")
+        self.fields["zone"].empty_label = "Choisir un arrondissement / département"
+
+        self.fields["address"].required = False
+        self.fields["fee"].required = False
+
+        instance = kwargs.get("instance")
+        if instance:
+            if instance.customer:
+                self.fields["name"].initial = instance.customer.name
+                self.fields["phone"].initial = instance.customer.phone
+            if instance.invoice and instance.invoice.customer:
+                cust = instance.invoice.customer
+                self.fields["name"].initial = self.fields["name"].initial or cust.name
+                self.fields["phone"].initial = self.fields["phone"].initial or cust.phone
+            return
+
+        # Facture transmise (?facture=<pk>) : le client est récupéré d'office.
+        invoice = self.initial.get("invoice")
+        if invoice is not None:
+            self.fields["invoice"].initial = invoice.pk
+            if invoice.customer:
+                self.fields["name"].initial = invoice.customer.name
+                self.fields["phone"].initial = invoice.customer.phone
+
+    def _source_total(self, invoice):
+        """Montant qui conditionne la livraison : total de la facture ou valeur de la sortie."""
+        if invoice is not None:
+            return invoice.total
+        if self.movement is not None:
+            return self.movement.product.sale_price * self.movement.quantity
+        return None
+
+    def _free_delivery(self, invoice):
+        """Livraison retirée (offerte) : dépense cumulée du client ou montant atteint."""
+        customer = invoice.customer if invoice else None
+        if customer is not None and customer.free_delivery:
+            return True
+        threshold = self.shop.delivery_free_threshold
+        total = self._source_total(invoice)
+        if threshold and threshold > 0 and total is not None and total >= threshold:
+            return True
+        return False
+
+    def clean(self):
+        cd = super().clean()
+        invoice = cd.get("invoice")
+        zone = cd.get("zone")
+        name = (cd.get("name") or "").strip()
+        phone = (cd.get("phone") or "").strip()
+        fee = cd.get("fee")
+        address = (cd.get("address") or "").strip()
+
+        if invoice and invoice.shop_id != self.shop.pk:
+            self.add_error("invoice", "Cette facture n'appartient pas à votre boutique.")
+
+        # Le client est repris de la facture quand elle en a un.
+        if invoice and invoice.customer:
+            name = name or invoice.customer.name
+            phone = phone or invoice.customer.phone
+
+        # Montant minimum : la livraison n'est valide qu'au-delà du seuil défini.
+        # Le montant vient de la facture liée ou, à défaut, de la sortie de stock.
+        min_amount = self.shop.delivery_min_amount
+        total = self._source_total(invoice)
+        if min_amount > 0 and total is None:
+            self.add_error(
+                "invoice",
+                "Liez une facture ou une sortie de stock pour vérifier le montant minimum de livraison.",
+            )
+        elif min_amount > 0 and total is not None and total < min_amount:
+            source = "facture" if invoice is not None else "sortie"
+            self.add_error(
+                "invoice" if invoice is not None else None,
+                f"Le montant de la {source} ({total} {self.shop.currency}) est inférieur au minimum "
+                f"({min_amount} {self.shop.currency}) requis pour la livraison.",
+            )
+
+        if not zone:
+            self.add_error("zone", "Veuillez sélectionner l'arrondissement ou le département.")
+
+        if zone and zone.is_manual:
+            # Hors Brazzaville : le montant est saisi à la main.
+            if fee is None or fee < 0:
+                self.add_error("fee", "Veuillez saisir le prix de livraison pour cette zone (hors Brazzaville).")
+            else:
+                cd["fee"] = fee
+        elif self._free_delivery(invoice):
+            # Seuil atteint : le prix de livraison est directement retiré.
+            cd["fee"] = Decimal("0")
+        elif zone:
+            if fee is None:
+                fee = zone.fee
+            if fee < 0:
+                self.add_error("fee", "Le prix ne peut pas être négatif.")
+            else:
+                cd["fee"] = fee
+        else:
+            if fee is None:
+                fee = compute_delivery_fee(self.shop, None)
+            if fee < 0:
+                self.add_error("fee", "Le prix ne peut pas être négatif.")
+            else:
+                cd["fee"] = fee
+
+        if not name:
+            self.add_error("name", "Le nom du client est requis.")
+
+        if not address and zone:
+            address = zone.name
+
+        cd["name"] = name
+        cd["phone"] = phone
+        cd["address"] = address
+        cd["zone"] = zone
+        return cd
+
+    def save(self, commit=True):
+        delivery = super().save(commit=False)
+        if self.movement is not None and not delivery.movement_id:
+            delivery.movement = self.movement
+        invoice = self.cleaned_data.get("invoice")
+        if invoice and invoice.customer:
+            delivery.customer = invoice.customer
+        elif not delivery.customer_id:
+            delivery.customer = self._resolve_customer(
+                self.cleaned_data.get("name", ""), self.cleaned_data.get("phone", "")
+            )
+        if commit:
+            delivery.save()
+        return delivery
+
+    def _resolve_customer(self, name, phone):
+        """Retrouve ou crée la fiche client à partir du nom et du téléphone saisis."""
+        name = (name or "").strip()
+        phone = (phone or "").strip()
+        if not name and not phone:
+            return None
+        if phone:
+            existing = self.shop.customers.filter(phone=phone).first()
+            if existing:
+                return existing
+        if name:
+            existing = self.shop.customers.filter(name__iexact=name).first()
+            if existing:
+                if phone and not existing.phone:
+                    existing.phone = phone
+                    existing.save(update_fields=["phone"])
+                return existing
+        return self.shop.customers.create(name=name or phone, phone=phone)
+
+
+class DeliveryZoneForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = DeliveryZone
+        fields = ["name", "fee", "is_manual"]
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "Ex. Talangaï (6e)"}),
+        }
+
+    def __init__(self, *args, shop, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.shop = shop
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        if not name:
+            raise forms.ValidationError("Le nom de la zone est obligatoire.")
+        qs = DeliveryZone.objects.filter(shop=self.shop, name=name).exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError("Cette zone existe déjà.")
+        return name
+
+    def clean_fee(self):
+        fee = self.cleaned_data.get("fee")
+        if fee is None:
+            return Decimal("0")
+        if fee < 0:
+            raise forms.ValidationError("Le prix ne peut pas être négatif.")
+        return fee

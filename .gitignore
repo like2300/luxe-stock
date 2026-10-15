@@ -34,3 +34,7 @@ moji*.py
 moji_scan_out.txt
 test.html
 signup_get.html
+
+# Sorties de tests/debug a la racine (ne pas commiter)
+/*.txt
+/*.tmp

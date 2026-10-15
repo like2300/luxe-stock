@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block page_title %}Livraisons — {{ shop.document_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<span class="hover:text-primary cursor-pointer transition-colors">Tableau de bord</span>
+<iconify-icon icon="solar:alt-arrow-right-linear" class="mx-2 text-xs"></iconify-icon>
+<span class="text-primary">Livraisons</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row md:items-end gap-4 justify-between mb-8">
+    <div>
+        <h1 class="md:text-3xl text-2xl font-bold text-dark font-poppins mb-2">Liste des Livraisons</h1>
+        <p class="text-slate-500">
+            Prix par défaut : {{ shop.delivery_fee|floatformat:0 }} {{ shop.currency }}. 
+            {% if shop.delivery_free_threshold %}
+            Seuil livraison offerte : {{ shop.delivery_free_threshold|floatformat:0 }} {{ shop.currency }} (dépenses cumulées du client).
+            {% else %}
+            Aucune règle de livraison offerte (seuil non défini dans les paramètres).
+            {% endif %}
+        </p>
+    </div>
+    <div class="flex gap-3">
+        <a href="{% url 'delivery_zones' %}" class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-white transition-all">
+            <iconify-icon icon="solar:map-point-linear" width="18"></iconify-icon>
+            <span>Zones & tarifs</span>
+        </a>
+        <a href="{% url 'delivery_create' %}" class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 transition-all">
+            <iconify-icon icon="solar:delivery-linear" width="18"></iconify-icon>
+            <span>Nouvelle Livraison</span>
+        </a>
+    </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
+    <div class="p-6 border-b border-slate-50 flex flex-col sm:flex-row gap-3">
+        <form method="get" class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto sm:flex-1">
+            <div class="relative w-full">
+                <iconify-icon icon="solar:magnifier-linear" class="absolute left-3 top-2.5 text-slate-400" width="16"></iconify-icon>
+                <input type="text" name="q" value="{{ q }}" placeholder="Rechercher (client, lieu, note)..." class="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-primary/50 transition-colors w-full">
+            </div>
+            <button type="submit" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:opacity-90 transition-opacity shrink-0">
+                <iconify-icon icon="solar:magnifier-linear" width="16"></iconify-icon>
+                <span>Rechercher</span>
+            </button>
+        </form>
+        <div class="flex gap-2 flex-wrap">
+            <a href="{% url 'delivery_list' %}" class="px-3 py-1.5 rounded-full text-xs font-medium {% if not status %}bg-primary text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %} transition-colors">Tous</a>
+            {% for s, label in statuses %}
+            <a href="{% url 'delivery_list' %}?status={{ s }}" class="px-3 py-1.5 rounded-full text-xs font-medium {% if status == s %}bg-primary text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %} transition-colors">{{ label }}</a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-50/50 border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Client</th>
+                    <th class="px-6 py-4">Lieu</th>
+                    <th class="px-6 py-4">Date prévue</th>
+                    <th class="px-6 py-4 text-right">Prix</th>
+                    <th class="px-6 py-4">Statut</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in page %}
+                <tr class="group hover:bg-slate-50/80 transition-colors border-b border-slate-50 last:border-0">
+                    <td class="px-6 py-4">
+                        {% if d.customer %}{{ d.customer.name }}{% else %}<span class="text-slate-400">—</span>{% endif %}
+                    </td>
+                    <td class="px-6 py-4 max-w-xs truncate">{{ d.address }}</td>
+                    <td class="px-6 py-4">{% if d.scheduled_for %}{{ d.scheduled_for|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                    <td class="px-6 py-4 text-right font-semibold text-dark">
+                        {% if d.fee == 0 %}
+                        <span class="text-emerald-600">Offert</span>
+                        {% else %}
+                        {{ d.fee|floatformat:0 }} {{ shop.currency }}
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                            {% if d.status == 'DELIVERED' %}bg-emerald-100 text-emerald-700
+                            {% elif d.status == 'CANCELLED' %}bg-rose-100 text-rose-700
+                            {% else %}bg-amber-100 text-amber-700{% endif %}">
+                            {{ d.get_status_display }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex gap-2 justify-end flex-wrap">
+                            <a href="{% url 'delivery_edit' d.pk %}" class="text-slate-400 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-slate-100" title="Modifier">
+                                <iconify-icon icon="solar:pen-2-linear" width="18"></iconify-icon>
+                            </a>
+                            {% if d.status == 'PENDING' %}
+                            <form method="post" action="{% url 'delivery_set_status' d.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="status" value="DELIVERED">
+                                <button type="submit" class="text-slate-400 hover:text-emerald-600 transition-colors p-1.5 rounded-full hover:bg-emerald-50" title="Marquer livrée">
+                                    <iconify-icon icon="solar:check-square-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'delivery_set_status' d.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="status" value="CANCELLED">
+                                <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Annuler">
+                                    <iconify-icon icon="solar:close-square-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if d.status != 'DELIVERED' %}
+                            <form method="post" action="{% url 'delivery_delete' d.pk %}" onsubmit="return confirm('Supprimer cette livraison ?');">
+                                {% csrf_token %}
+                                <button type="submit" class="text-slate-400 hover:text-rose-500 transition-colors p-1.5 rounded-full hover:bg-rose-50" title="Supprimer">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-linear" width="18"></iconify-icon>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="px-6 py-4 text-center text-slate-400">Aucune livraison.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

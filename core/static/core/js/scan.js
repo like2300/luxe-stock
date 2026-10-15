@@ -268,20 +268,37 @@
         });
     }
 
+    var WANTED_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code", "codabar"];
+
+    function resolveFormats(Detector) {
+        // Chaque navigateur ne reconnait qu'une partie des formats, et en demander
+        // un seul d'inconnu fait echouer la construction (voir « Getting Supported
+        // Formats » sur MDN). On ne garde donc que ceux reellement proposes.
+        if (typeof Detector.getSupportedFormats !== "function") {
+            return Promise.resolve(WANTED_FORMATS);
+        }
+        return Detector.getSupportedFormats().then(function (list) {
+            var kept = WANTED_FORMATS.filter(function (f) { return list.indexOf(f) !== -1; });
+            return kept.length ? kept : list;
+        });
+    }
+
     function startBarcodeDetector() {
         // BarcodeDetector natif (Chrome/Edge/Android) : aucun script à charger.
         var Detector = window.BarcodeDetector;
         if (!Detector) { return startHtml5QrCode(); }
 
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-            .then(function (media) {
+        Promise.all([
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }),
+            resolveFormats(Detector)
+        ])
+            .then(function (results) {
+                var media = results[0], formats = results[1];
                 stream = media;
                 cameraVideo.srcObject = media;
                 cameraVideo.setAttribute("playsinline", "");
                 cameraVideo.play();
-                var detector = new Detector({
-                    formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code", "codabar"]
-                });
+                var detector = formats.length ? new Detector({ formats: formats }) : new Detector();
                 var tick = function () {
                     detector.detect(cameraVideo)
                         .then(function (codes) {

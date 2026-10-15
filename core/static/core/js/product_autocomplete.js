@@ -17,6 +17,14 @@
             var libelle = n > 1 ? "produits" : "produit";
             return '<span class="ml-auto shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">' + n + " " + libelle + "</span>";
         }
+        if (kind === "customer") {
+            // Client : dépense cumulée, et pastille verte si la livraison est offerte.
+            if (item.badge) {
+                return '<span class="ml-auto shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Livraison offerte</span>';
+            }
+            var spent = escapeHtml(item.spending || n.toLocaleString("fr-FR") || "0");
+            return '<span class="ml-auto shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">' + spent + " " + escapeHtml(item.currency || "") + "</span>";
+        }
         if (item.badge) {
             return '<span class="ml-auto shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">' + n + " " + escapeHtml(item.badge) + "</span>";
         }
